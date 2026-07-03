@@ -69,7 +69,7 @@ wails build -webview2 embed
 - 数据需要持久化时，优先走 `internal/store`，保持 SQLite schema、迁移和查询集中管理。
 - 扫描字体库、生成预览、安装字体这类耗时或高风险操作要有进度、错误状态和可恢复策略。
 - Windows 字体安装逻辑必须区分 `user` 和 `machine` 范围；`machine` 操作需要管理员权限。
-- 当前版本为保留既有索引，预览缓存和持久数据仍暂时沿用历史 `Yuncii\FontManager` 数据目录；如需迁移到 Ziio 命名空间，必须提供自动迁移或显式导入流程。
+- 应用持久化数据应落在 `%APPDATA%\Ziio\FontManager`，预览缓存应落在 `%LOCALAPPDATA%\Ziio\FontManager\cache`；如后续调整目录，需同步更新代码、文档和发布说明。
 
 ## React + TypeScript 最佳实践提示
 

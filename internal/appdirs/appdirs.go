@@ -30,8 +30,8 @@ func Resolve() (Dirs, error) {
 	}
 
 	dirs := Dirs{
-		DataDir:  filepath.Join(dataBase, "Yuncii", "FontManager"),
-		CacheDir: filepath.Join(cacheBase, "Yuncii", "FontManager", "cache"),
+		DataDir:  filepath.Join(dataBase, "Ziio", "FontManager"),
+		CacheDir: filepath.Join(cacheBase, "Ziio", "FontManager", "cache"),
 	}
 	dirs.DatabasePath = filepath.Join(dirs.DataDir, "fontmanager.db")
 

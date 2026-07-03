@@ -53,17 +53,6 @@ Ziio focuses on practical local font-library workflows: indexing font folders, s
 
 `frontend/node_modules`, `frontend/dist`, and `build/bin` are dependencies or generated build outputs, not core source directories.
 
-### Data Locations
-
-To avoid losing existing indexed libraries after the brand rename, the current build intentionally keeps the historical data namespace:
-
-- Persistent data: `%APPDATA%\Yuncii\FontManager`
-- SQLite database: `%APPDATA%\Yuncii\FontManager\fontmanager.db`
-- Preview cache: `%LOCALAPPDATA%\Yuncii\FontManager\cache`
-- Preview font files: `%LOCALAPPDATA%\Yuncii\FontManager\cache\previews`
-
-If the project later migrates to a Ziio-named data namespace, it should provide an automatic migration or an explicit import flow from the historical directory.
-
 ### Development
 
 Run the app in live development mode:
@@ -167,17 +156,6 @@ Ziio 面向真实的本地字体库管理流程：索引字体文件夹、扫描
 ```
 
 `frontend/node_modules`、`frontend/dist` 和 `build/bin` 是依赖或生成产物，不属于核心源码目录。
-
-### 数据位置
-
-为了避免品牌重命名后丢失已有索引，当前版本暂时沿用历史数据命名空间：
-
-- 持久化数据：`%APPDATA%\Yuncii\FontManager`
-- SQLite 数据库：`%APPDATA%\Yuncii\FontManager\fontmanager.db`
-- 预览缓存：`%LOCALAPPDATA%\Yuncii\FontManager\cache`
-- 预览字体文件：`%LOCALAPPDATA%\Yuncii\FontManager\cache\previews`
-
-如果后续迁移到 Ziio 命名空间，应提供从历史目录自动迁移或显式导入的流程。
 
 ### 开发
 
