@@ -1,0 +1,22 @@
+build/bin/
+frontend/dist/
+node_modules/
+
+# Logs and local runtime files
+*.log
+*.tmp
+*.temp
+
+# Local environment
+.env
+.env.*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Test/coverage output
+coverage/
+*.cover
