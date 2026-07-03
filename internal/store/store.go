@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -224,6 +225,11 @@ func (s *Store) AddRootWithKind(path, kind, displayName string) (models.LibraryR
 	if strings.TrimSpace(kind) == "" {
 		kind = "user"
 	}
+	if !strings.EqualFold(kind, "system") {
+		if err := s.validateUserRootPath(clean); err != nil {
+			return models.LibraryRoot{}, err
+		}
+	}
 	_, err = s.db.Exec(`
 		INSERT INTO library_roots(path, name, kind, enabled, created_at, updated_at)
 		VALUES(?, ?, ?, 1, ?, ?)
@@ -233,6 +239,54 @@ func (s *Store) AddRootWithKind(path, kind, displayName string) (models.LibraryR
 		return models.LibraryRoot{}, err
 	}
 	return s.RootByPath(clean)
+}
+
+func (s *Store) validateUserRootPath(path string) error {
+	rows, err := s.db.Query(`SELECT path, name FROM library_roots WHERE kind != 'system'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var existingPath, existingName string
+		if err := rows.Scan(&existingPath, &existingName); err != nil {
+			return err
+		}
+		if samePath(path, existingPath) {
+			continue
+		}
+		if pathContains(existingPath, path) {
+			return fmt.Errorf("该字体库已被已有字体库 %q 覆盖：%s", existingName, existingPath)
+		}
+		if pathContains(path, existingPath) {
+			return fmt.Errorf("已有字体库 %q 位于该路径内：%s，请先移除已有字体库后再添加父目录", existingName, existingPath)
+		}
+	}
+	return rows.Err()
+}
+
+func samePath(a, b string) bool {
+	a = filepath.Clean(a)
+	b = filepath.Clean(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+func pathContains(parent, child string) bool {
+	parent = filepath.Clean(parent)
+	child = filepath.Clean(child)
+	if runtime.GOOS == "windows" {
+		parent = strings.ToLower(parent)
+		child = strings.ToLower(child)
+	}
+	rel, err := filepath.Rel(parent, child)
+	if err != nil || rel == "." || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func (s *Store) RootByPath(path string) (models.LibraryRoot, error) {

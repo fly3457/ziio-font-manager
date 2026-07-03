@@ -1,3 +1,12 @@
+export type AppInfo = {
+  name: string;
+  version: string;
+  dataDir: string;
+  cacheDir: string;
+  logDir: string;
+  databasePath: string;
+};
+
 export type LibraryRoot = {
   id: number;
   path: string;
@@ -151,7 +160,7 @@ function service(name: "LibraryService" | "FontService" | "InstallService") {
 export const api = {
   appInfo: () => {
     const w = window as WailsWindow;
-    return w.go?.main?.App?.GetAppInfo?.() ?? Promise.resolve(null);
+    return (w.go?.main?.App?.GetAppInfo?.() as Promise<AppInfo>) ?? Promise.resolve(null);
   },
   chooseAndAddRoot: () => service("LibraryService").ChooseAndAddRoot() as Promise<LibraryRoot>,
   scanSystemFonts: () => service("LibraryService").ScanSystemFonts() as Promise<LibraryRoot[]>,

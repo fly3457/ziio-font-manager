@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"fontManager/internal/appdirs"
+	"fontManager/internal/diagnostics"
 	"fontManager/internal/library"
 	"fontManager/internal/models"
 	"fontManager/internal/store"
@@ -30,20 +31,24 @@ func NewApp() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	diagnostics.Appendf(dirs.LogDir, "app.log", "app-start dataDir=%q cacheDir=%q logDir=%q db=%q", dirs.DataDir, dirs.CacheDir, dirs.LogDir, dirs.DatabasePath)
 	db, err := store.Open(dirs.DatabasePath)
 	if err != nil {
+		diagnostics.Appendf(dirs.LogDir, "app.log", "store-open-error db=%q error=%q", dirs.DatabasePath, err.Error())
 		return nil, err
 	}
 	if err := db.InterruptRunningScans("应用重启后重置未完成扫描"); err != nil {
 		_ = db.Close()
+		diagnostics.Appendf(dirs.LogDir, "app.log", "interrupt-running-scans-error error=%q", err.Error())
 		return nil, err
 	}
+	diagnostics.Append(dirs.LogDir, "app.log", "running scans reset after startup")
 
 	app := &App{
 		Dirs:  dirs,
 		Store: db,
 	}
-	app.LibraryService = library.NewLibraryService(db)
+	app.LibraryService = library.NewLibraryService(db, dirs.LogDir)
 	app.FontService = library.NewFontService(db, dirs.CacheDir)
 	app.InstallService = library.NewInstallService(db)
 	return app, nil
@@ -56,6 +61,7 @@ func (a *App) startup(ctx context.Context) {
 	a.LibraryService.SetContext(ctx)
 	a.FontService.SetContext(ctx)
 	a.InstallService.SetContext(ctx)
+	diagnostics.Append(a.Dirs.LogDir, "app.log", "wails-startup-complete")
 }
 
 func (a *App) GetAppInfo() models.AppInfo {
@@ -64,6 +70,7 @@ func (a *App) GetAppInfo() models.AppInfo {
 		Version:      "0.1.0",
 		DataDir:      a.Dirs.DataDir,
 		CacheDir:     a.Dirs.CacheDir,
+		LogDir:       a.Dirs.LogDir,
 		DatabasePath: a.Dirs.DatabasePath,
 	}
 }

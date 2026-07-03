@@ -21,7 +21,17 @@ import {
     X
 } from 'lucide-react';
 import {EventsOn, LogInfo, LogWarning} from '../wailsjs/runtime/runtime';
-import {api, FontDetail, FontFolder, FontItem, LibraryRoot, OperationProgress, OperationResult, PreviewResponse} from './api';
+import {
+    api,
+    type FontDetail,
+    type FontFolder,
+    type FontItem,
+    type FontQuery,
+    type LibraryRoot,
+    type OperationProgress,
+    type OperationResult,
+    type PreviewResponse
+} from './api';
 
 const PAGE_SIZE = 20;
 const PREVIEW_CONCURRENCY = 2;
@@ -221,24 +231,24 @@ function App() {
         }
     }
 
-    async function loadFonts(reset: boolean) {
+    async function loadFonts(reset: boolean, overrides: Partial<FontQuery> = {}, autoSelectFirst = true) {
         const offset = reset ? 0 : fonts.length;
         try {
             const next = await api.searchFonts({
-                query,
-                rootId: selectedRoot,
-                folderPath: selectedFolder,
+                query: overrides.query ?? query,
+                rootId: overrides.rootId ?? selectedRoot,
+                folderPath: overrides.folderPath ?? selectedFolder,
                 folderRecursive: true,
-                favoritesOnly,
-                installedOnly,
+                favoritesOnly: overrides.favoritesOnly ?? favoritesOnly,
+                installedOnly: overrides.installedOnly ?? installedOnly,
                 limit: PAGE_SIZE,
-                offset
+                offset: overrides.offset ?? offset
             });
             setHasMore((next?.length ?? 0) === PAGE_SIZE);
             if (reset) {
                 setFonts(next ?? []);
                 setCheckedFaces([]);
-                setSelectedFace(next?.length ? next[0].faceId : null);
+                setSelectedFace(autoSelectFirst && next?.length ? next[0].faceId : null);
             } else {
                 setFonts(current => [...current, ...(next ?? [])]);
             }
@@ -283,6 +293,43 @@ function App() {
             await api.rescanRoot(target);
             setNotice({type: 'success', text: '已开始后台扫描'});
             await loadRoots();
+        });
+    }
+
+    async function removeRoot(root: LibraryRoot) {
+        if (root.kind === 'system') {
+            setNotice({type: 'error', text: '系统字库不能删除'});
+            return;
+        }
+        if (root.scanStatus === 'running') {
+            setNotice({type: 'info', text: '字体库正在扫描，请等待扫描完成后再删除'});
+            return;
+        }
+        if (!window.confirm(`从 Ziio 移除字体库“${root.name}”？\n\n路径：${root.path}\n\n这只会删除应用内索引记录，磁盘上的文件夹和字体文件会保留。`)) {
+            return;
+        }
+
+        await runBusy(async () => {
+            await api.removeRoot(root.id);
+            const deletingActiveRoot = selectedRoot === root.id;
+            setExpandedFolderKeys(current => current.filter(item => !item.startsWith(`${root.id}:`)));
+            if (deletingActiveRoot) {
+                setSelectedRoot(0);
+                setSelectedFolder('');
+                setFavoritesOnly(false);
+                setInstalledOnly(false);
+                setFolders([]);
+                setCheckedFaces([]);
+                setSelectedFace(null);
+                setDetail(null);
+            }
+            await loadRoots();
+            await loadFonts(
+                true,
+                deletingActiveRoot ? {rootId: 0, folderPath: '', favoritesOnly: false, installedOnly: false} : {},
+                !deletingActiveRoot
+            );
+            setNotice({type: 'success', text: `已从 Ziio 移除 ${root.name}，源文件未删除`});
         });
     }
 
@@ -709,6 +756,7 @@ function App() {
                 <RootSection
                     title="用户字体库"
                     roots={userRoots}
+                    busy={busy}
                     selectedRoot={selectedRoot}
                     selectedFolder={selectedFolder}
                     folders={folders}
@@ -716,10 +764,12 @@ function App() {
                     onSelectRoot={selectRoot}
                     onSelectFolder={selectFolder}
                     onToggleFolder={toggleFolder}
+                    onRemoveRoot={removeRoot}
                 />
                 <RootSection
                     title="系统字库"
                     roots={systemRoots}
+                    busy={busy}
                     selectedRoot={selectedRoot}
                     selectedFolder={selectedFolder}
                     folders={folders}
@@ -916,6 +966,7 @@ function OperationProgressModal(props: {progress: OperationProgress}) {
 function RootSection(props: {
     title: string;
     roots: LibraryRoot[];
+    busy: boolean;
     selectedRoot: number;
     selectedFolder: string;
     folders: FontFolder[];
@@ -923,6 +974,7 @@ function RootSection(props: {
     onSelectRoot: (id: number) => void;
     onSelectFolder: (rootId: number, path: string, hasChildren: boolean) => void;
     onToggleFolder: (rootId: number, path: string) => void;
+    onRemoveRoot?: (root: LibraryRoot) => void;
 }) {
     if (props.roots.length === 0) {
         return null;
@@ -936,11 +988,27 @@ function RootSection(props: {
                     const visibleFolders = selected ? visibleFolderRows(root.id, props.folders, props.expandedFolderKeys) : [];
                     return (
                         <div className="root-group" key={root.id}>
-                            <button className={selected && props.selectedFolder === '' ? 'active' : ''} onClick={() => props.onSelectRoot(root.id)}>
-                                {root.kind === 'system' ? <Server size={16}/> : <FolderOpen size={16}/>}
-                                <span>{root.name}</span>
-                                <b>{root.scanStatus === 'running' ? `${root.scanProcessed}/${root.scanTotal || '?'}` : root.fontCount}</b>
-                            </button>
+                            <div className={props.onRemoveRoot ? 'root-row removable' : 'root-row'}>
+                                <button className={selected && props.selectedFolder === '' ? 'root-main active' : 'root-main'} onClick={() => props.onSelectRoot(root.id)}>
+                                    {root.kind === 'system' ? <Server size={16}/> : <FolderOpen size={16}/>}
+                                    <span>{root.name}</span>
+                                    <b>{root.scanStatus === 'running' ? `${root.scanProcessed}/${root.scanTotal || '?'}` : root.fontCount}</b>
+                                </button>
+                                {props.onRemoveRoot && (
+                                    <button
+                                        className="root-remove"
+                                        disabled={props.busy || root.scanStatus === 'running'}
+                                        title={root.scanStatus === 'running' ? '扫描中暂不能删除' : `从 Ziio 移除 ${root.name}`}
+                                        aria-label={`删除字体库 ${root.name}`}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            props.onRemoveRoot?.(root);
+                                        }}
+                                    >
+                                        <Trash2 size={14}/>
+                                    </button>
+                                )}
+                            </div>
                             {selected && visibleFolders.length > 0 && (
                                 <div className="folder-children">
                                     {visibleFolders.map(row => (

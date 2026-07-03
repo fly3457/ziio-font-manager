@@ -1,7 +1,9 @@
 package store
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"fontManager/internal/models"
@@ -142,5 +144,103 @@ func TestStoreFolderListingAndFolderQuery(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Family != "Folder Demo" {
 		t.Fatalf("folder query returned %#v", items)
+	}
+}
+
+func TestStoreRemoveRootDeletesIndexedFonts(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	rootDir := t.TempDir()
+	root, err := db.AddRoot(rootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	filePath := filepath.Join(root.Path, "Demo.ttf")
+	_, _, err = db.UpsertFontFile(FileUpsert{
+		RootID:           root.ID,
+		Path:             filePath,
+		FileName:         "Demo.ttf",
+		Format:           "TTF",
+		Size:             123,
+		ModifiedAt:       "2026-06-24T00:00:00+08:00",
+		Hash:             "abc",
+		Status:           "ok",
+		PreviewSupported: true,
+	}, []models.FontFace{{
+		FaceIndex:        0,
+		Family:           "Remove Demo",
+		Style:            "Regular",
+		FullName:         "Remove Demo Regular",
+		Weight:           400,
+		PreviewSupported: true,
+		Status:           "ok",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := db.QueryFonts(models.FontQuery{RootID: root.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items before remove = %d, want 1", len(items))
+	}
+
+	if err := db.RemoveRoot(root.ID); err != nil {
+		t.Fatal(err)
+	}
+	roots, err := db.ListRoots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range roots {
+		if item.ID == root.ID {
+			t.Fatalf("removed root still listed: %#v", roots)
+		}
+	}
+	items, err = db.QueryFonts(models.FontQuery{RootID: root.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("items after remove = %d, want 0: %#v", len(items), items)
+	}
+}
+
+func TestStoreRejectsNestedUserRoots(t *testing.T) {
+	parent := t.TempDir()
+	child := filepath.Join(parent, "Child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.AddRoot(parent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AddRoot(child); err == nil || !strings.Contains(err.Error(), "覆盖") {
+		t.Fatalf("AddRoot child error = %v, want covered-by-parent rejection", err)
+	}
+
+	db2, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+	if _, err := db2.AddRoot(child); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db2.AddRoot(parent); err == nil || !strings.Contains(err.Error(), "位于该路径内") {
+		t.Fatalf("AddRoot parent error = %v, want contains-existing-root rejection", err)
 	}
 }

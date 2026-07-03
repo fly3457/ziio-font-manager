@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode"
 
+	"fontManager/internal/diagnostics"
 	"fontManager/internal/fontmeta"
 	"fontManager/internal/models"
 	"fontManager/internal/scanner"
@@ -27,14 +28,20 @@ type LibraryService struct {
 	ctx     context.Context
 	store   *store.Store
 	scanner *scanner.Scanner
+	logDir  string
 	mu      sync.Mutex
 	running map[int64]bool
 }
 
-func NewLibraryService(s *store.Store) *LibraryService {
+func NewLibraryService(s *store.Store, logDir ...string) *LibraryService {
+	dir := ""
+	if len(logDir) > 0 {
+		dir = logDir[0]
+	}
 	return &LibraryService{
 		store:   s,
-		scanner: scanner.New(s),
+		scanner: scanner.New(s, dir),
+		logDir:  dir,
 		running: map[int64]bool{},
 	}
 }
@@ -60,8 +67,10 @@ func (s *LibraryService) ChooseAndAddRoot() (models.LibraryRoot, error) {
 func (s *LibraryService) AddRoot(path string) (models.LibraryRoot, error) {
 	root, err := s.store.AddRoot(path)
 	if err != nil {
+		diagnostics.Appendf(s.logDir, "app.log", "add-root-error path=%q error=%q", path, err.Error())
 		return root, err
 	}
+	diagnostics.Appendf(s.logDir, "app.log", "add-root id=%d path=%q", root.ID, root.Path)
 	s.startScan(root)
 	return s.store.RootByID(root.ID)
 }
@@ -74,8 +83,10 @@ func (s *LibraryService) ScanSystemFonts() ([]models.LibraryRoot, error) {
 		}
 		root, err := s.store.AddRootWithKind(candidate.path, "system", candidate.name)
 		if err != nil {
+			diagnostics.Appendf(s.logDir, "app.log", "scan-system-root-error path=%q error=%q", candidate.path, err.Error())
 			return roots, err
 		}
+		diagnostics.Appendf(s.logDir, "app.log", "scan-system-root id=%d path=%q", root.ID, root.Path)
 		s.startScan(root)
 		roots = append(roots, root)
 	}
@@ -90,6 +101,27 @@ func (s *LibraryService) ListRoots() ([]models.LibraryRoot, error) {
 }
 
 func (s *LibraryService) RemoveRoot(id int64) error {
+	root, err := s.store.RootByID(id)
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(root.Kind, "system") {
+		return fmt.Errorf("系统字库不能删除")
+	}
+
+	s.mu.Lock()
+	running := s.running[id]
+	s.mu.Unlock()
+	if running {
+		return fmt.Errorf("字体库正在扫描，请等待扫描完成后再删除")
+	}
+	status, err := s.store.LatestScanStatus(id)
+	if err != nil {
+		return err
+	}
+	if status.Status == "running" {
+		return fmt.Errorf("字体库正在扫描，请等待扫描完成后再删除")
+	}
 	return s.store.RemoveRoot(id)
 }
 
@@ -98,6 +130,7 @@ func (s *LibraryService) RescanRoot(id int64) (models.ScanResult, error) {
 	if err != nil {
 		return models.ScanResult{}, err
 	}
+	diagnostics.Appendf(s.logDir, "app.log", "rescan-root id=%d path=%q", root.ID, root.Path)
 	s.startScan(root)
 	return models.ScanResult{RootID: id}, nil
 }
@@ -121,11 +154,19 @@ func (s *LibraryService) startScan(root models.LibraryRoot) {
 
 	go func() {
 		defer func() {
+			if recovered := recover(); recovered != nil {
+				diagnostics.Appendf(s.logDir, "app.log", "scan-panic root=%d path=%q panic=%v", root.ID, root.Path, recovered)
+				if s.ctx != nil {
+					runtime.LogWarningf(s.ctx, "scan panic root=%d path=%q panic=%v", root.ID, root.Path, recovered)
+				}
+			}
 			s.mu.Lock()
 			delete(s.running, root.ID)
 			s.mu.Unlock()
 		}()
+		diagnostics.Appendf(s.logDir, "app.log", "scan-start root=%d path=%q", root.ID, root.Path)
 		_, _ = s.scanner.ScanRoot(root)
+		diagnostics.Appendf(s.logDir, "app.log", "scan-stop root=%d path=%q", root.ID, root.Path)
 	}()
 }
 

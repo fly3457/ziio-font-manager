@@ -59,7 +59,8 @@ button {
 .secondary-action,
 .action-grid button,
 .nav-list button,
-.root-list button,
+.root-main,
+.root-remove,
 .folder-children button,
 .icon-button,
 .segmented button {
@@ -94,7 +95,8 @@ button {
 .primary-action:disabled,
 .secondary-action:disabled,
 .icon-button:disabled,
-.action-grid button:disabled {
+.action-grid button:disabled,
+.root-remove:disabled {
     opacity: .55;
     cursor: wait;
 }
@@ -108,7 +110,7 @@ button {
 }
 
 .nav-list button,
-.root-list button,
+.root-main,
 .folder-children button {
     min-height: 36px;
     border-radius: 7px;
@@ -123,26 +125,77 @@ button {
 }
 
 .nav-list button:hover,
-.root-list button:hover,
+.root-main:hover,
+.root-remove:hover,
 .folder-children button:hover,
 .nav-list button.active,
-.root-list button.active,
+.root-main.active,
 .folder-children button.active {
     background: #e8f2ee;
     color: #0d5c4c;
 }
 
 .nav-list b,
-.root-list b,
+.root-main b,
 .folder-children b {
     color: #7a847d;
     font-size: 12px;
+}
+
+.nav-list button span,
+.root-main span,
+.folder-children button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .root-group {
     display: flex;
     flex-direction: column;
     gap: 4px;
+}
+
+.root-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 4px;
+}
+
+.root-row.removable {
+    grid-template-columns: minmax(0, 1fr) 30px;
+}
+
+.root-main {
+    min-width: 0;
+    width: 100%;
+}
+
+.root-remove {
+    width: 30px;
+    min-height: 30px;
+    padding: 0;
+    border-radius: 7px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    color: #8b6a61;
+}
+
+.root-remove:hover {
+    background: #fff0e8;
+    color: #9a3c14;
+}
+
+.root-remove:disabled {
+    cursor: not-allowed;
+}
+
+.root-remove:disabled:hover {
+    background: transparent;
+    color: #8b6a61;
 }
 
 .folder-children {

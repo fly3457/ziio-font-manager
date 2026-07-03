@@ -5,6 +5,7 @@ export namespace models {
 	    version: string;
 	    dataDir: string;
 	    cacheDir: string;
+	    logDir: string;
 	    databasePath: string;
 	
 	    static createFrom(source: any = {}) {
@@ -17,6 +18,7 @@ export namespace models {
 	        this.version = source["version"];
 	        this.dataDir = source["dataDir"];
 	        this.cacheDir = source["cacheDir"];
+	        this.logDir = source["logDir"];
 	        this.databasePath = source["databasePath"];
 	    }
 	}

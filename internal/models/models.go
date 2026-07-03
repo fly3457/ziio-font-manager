@@ -5,6 +5,7 @@ type AppInfo struct {
 	Version      string `json:"version"`
 	DataDir      string `json:"dataDir"`
 	CacheDir     string `json:"cacheDir"`
+	LogDir       string `json:"logDir"`
 	DatabasePath string `json:"databasePath"`
 }
 

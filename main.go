@@ -2,8 +2,10 @@ package main
 
 import (
 	"embed"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
+	wailslogger "github.com/wailsapp/wails/v2/pkg/logger"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
@@ -20,11 +22,14 @@ func main() {
 
 	// Create application with options
 	err = wails.Run(&options.App{
-		Title:     "Ziio Font Manager",
-		Width:     1360,
-		Height:    860,
-		MinWidth:  1100,
-		MinHeight: 700,
+		Title:              "Ziio Font Manager",
+		Width:              1360,
+		Height:             860,
+		MinWidth:           1100,
+		MinHeight:          700,
+		Logger:             wailslogger.NewFileLogger(filepath.Join(app.Dirs.LogDir, "app.log")),
+		LogLevel:           wailslogger.INFO,
+		LogLevelProduction: wailslogger.INFO,
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
 			Handler: app.previewFontHandler(),

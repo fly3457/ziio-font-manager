@@ -1,8 +1,11 @@
 package library
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"fontManager/internal/store"
 )
 
 func TestPreviewCacheKeyIncludesSampleHash(t *testing.T) {
@@ -19,5 +22,77 @@ func TestPreviewCacheKeyIncludesSampleHash(t *testing.T) {
 	}
 	if first == other {
 		t.Fatalf("different sample text produced same cache key: %q", first)
+	}
+}
+
+func TestLibraryServiceRemoveRootRejectsSystemRoot(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	root, err := db.AddRootWithKind(t.TempDir(), "system", "系统字库")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewLibraryService(db)
+
+	err = service.RemoveRoot(root.ID)
+	if err == nil || !strings.Contains(err.Error(), "系统字库") {
+		t.Fatalf("RemoveRoot error = %v, want system root rejection", err)
+	}
+	if _, err := db.RootByID(root.ID); err != nil {
+		t.Fatalf("system root should remain after rejected remove: %v", err)
+	}
+}
+
+func TestLibraryServiceRemoveRootRejectsRunningRoot(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	root, err := db.AddRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewLibraryService(db)
+	service.mu.Lock()
+	service.running[root.ID] = true
+	service.mu.Unlock()
+
+	err = service.RemoveRoot(root.ID)
+	if err == nil || !strings.Contains(err.Error(), "正在扫描") {
+		t.Fatalf("RemoveRoot error = %v, want running root rejection", err)
+	}
+	if _, err := db.RootByID(root.ID); err != nil {
+		t.Fatalf("running root should remain after rejected remove: %v", err)
+	}
+}
+
+func TestLibraryServiceRemoveRootRejectsRunningScanStatus(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	root, err := db.AddRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.BeginScan(root.ID); err != nil {
+		t.Fatal(err)
+	}
+	service := NewLibraryService(db)
+
+	err = service.RemoveRoot(root.ID)
+	if err == nil || !strings.Contains(err.Error(), "正在扫描") {
+		t.Fatalf("RemoveRoot error = %v, want running scan status rejection", err)
+	}
+	if _, err := db.RootByID(root.ID); err != nil {
+		t.Fatalf("running scan root should remain after rejected remove: %v", err)
 	}
 }
