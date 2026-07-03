@@ -2,7 +2,7 @@
 
 ## English
 
-**Ziio Font Manager** is a local-first desktop font manager for Windows 11. It is built with Wails, Go, React, and TypeScript, and is currently in **Beta / v0.3 planning** after completing the MVP stage.
+**Ziio Font Manager** is a local-first desktop font manager for Windows 11. It is built with Wails, Go, React, and TypeScript, and is currently in **Beta / v0.3 planning**.
 
 Ziio focuses on practical local font-library workflows: indexing font folders, scanning installed system fonts, previewing typefaces, searching metadata, collecting favorites, and managing Windows font installation records.
 
@@ -117,7 +117,7 @@ Ziio is moving from MVP completeness toward Beta reliability. The current priori
 
 ## 中文
 
-**Ziio Font Manager** 是一个面向 Windows 11 的本地优先字体管理桌面应用。项目使用 Wails、Go、React 和 TypeScript 构建，已经完成 MVP 阶段验证，当前进入 **Beta / v0.3 planning** 阶段。
+**Ziio Font Manager** 是一个面向 Windows 11 的本地优先字体管理桌面应用。项目使用 Wails、Go、React 和 TypeScript 构建，当前处于 **Beta / v0.3 planning** 阶段。
 
 Ziio 面向真实的本地字体库管理流程：索引字体文件夹、扫描系统已安装字体、预览字体、检索字体元数据、收藏常用字体，并管理 Windows 字体安装记录。
 
