@@ -11,13 +11,13 @@
 - 新增 `AGENTS.md`：记录 Codex 项目级协作规则、Wails + Go + React + TypeScript 工作提示、常用命令和开发日志更新要求。
 - 新增 `DEVELOPMENT_LOG.md`：作为根目录开发日志，后续新功能和较大改进需要同步维护。
 - 品牌 / 应用名确定为 `Ziio`，完整名为 `Ziio Font Manager`；同步更新窗口标题、前端品牌区、HTML title、Wails 输出名、文档标题和项目说明。
-- 将 `README.md` 改为英语为主、中英双语辅助的项目说明，方便 GitHub 访客快速了解项目，同时保留中文上下文。
+- 将 `README.md` 改为英文完整说明在前、中文完整说明在后的双语项目文档，方便 GitHub 访客快速了解项目，同时保留完整中文上下文。
 
 影响范围：
 
 - 文档、前端可见品牌、Wails 应用标题 / 输出名和少量后端可见字符串。
 - 持久化数据目录暂时沿用历史 `Yuncii\FontManager` 命名空间，避免用户已有索引丢失。
-- README 文档面向 GitHub 访客调整为英语优先。
+- README 文档面向 GitHub 访客调整为英语优先，并保留完整中文版本。
 
 验证：
 

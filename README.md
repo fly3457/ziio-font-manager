@@ -1,14 +1,12 @@
 # Ziio Font Manager
 
-**Ziio Font Manager** is a local-first desktop font manager for Windows 11. It is built with Wails, Go, React, and TypeScript, and is currently in **Beta / v0.3 planning** after completing the MVP stage.
+## English
 
-**中文简介：** Ziio Font Manager 是一个面向 Windows 11 的本地字体管理工具。项目已经完成 MVP 验证，当前进入 Beta 阶段，重点转向稳定性、权限体验、发布工程和可维护性。
+**Ziio Font Manager** is a local-first desktop font manager for Windows 11. It is built with Wails, Go, React, and TypeScript, and is currently in **Beta / v0.3 planning** after completing the MVP stage.
 
 Ziio focuses on practical local font-library workflows: indexing font folders, scanning installed system fonts, previewing typefaces, searching metadata, collecting favorites, and managing Windows font installation records.
 
-**中文补充：** Ziio 主要解决本地字体库索引、预览、检索、收藏、安装和卸载管理问题。
-
-## Features / 功能
+### Features
 
 - **Library management:** add user font folders and scan Windows system font locations, shown separately as user libraries and system libraries.
 - **Background indexing:** adding, rescanning, and system-font scanning run as background jobs so large folders do not block the UI.
@@ -20,9 +18,7 @@ Ziio focuses on practical local font-library workflows: indexing font folders, s
 - **Windows font operations:** install by copy, install by link, uninstall, and choose between current-user and all-users scopes.
 - **Operation feedback:** installation progress and failures are reported through Wails events and shown in the UI.
 
-中文概览：Ziio 支持用户字体库和系统字库扫描、后台索引、搜索筛选、收藏、文件夹树、触底分页加载、字体预览、详情查看、当前用户 / 所有用户安装范围和操作进度反馈。
-
-## Tech Stack / 技术栈
+### Tech Stack
 
 - Desktop shell: Wails v2.12
 - Backend: Go 1.25
@@ -32,7 +28,7 @@ Ziio focuses on practical local font-library workflows: indexing font folders, s
 - Font parsing and preview generation: `github.com/tdewolff/font`
 - Windows integration: Registry, GDI `AddFontResourceEx` / `RemoveFontResourceEx`, `WM_FONTCHANGE`
 
-## Project Structure / 项目结构
+### Project Structure
 
 ```text
 .
@@ -57,9 +53,7 @@ Ziio focuses on practical local font-library workflows: indexing font folders, s
 
 `frontend/node_modules`, `frontend/dist`, and `build/bin` are dependencies or generated build outputs, not core source directories.
 
-中文说明：`frontend/node_modules`、`frontend/dist` 和 `build/bin` 不应作为核心源码提交或维护。
-
-## Data Locations / 数据位置
+### Data Locations
 
 To avoid losing existing indexed libraries after the brand rename, the current build intentionally keeps the historical data namespace:
 
@@ -68,9 +62,9 @@ To avoid losing existing indexed libraries after the brand rename, the current b
 - Preview cache: `%LOCALAPPDATA%\Yuncii\FontManager\cache`
 - Preview font files: `%LOCALAPPDATA%\Yuncii\FontManager\cache\previews`
 
-中文说明：为了避免品牌重命名后丢失已有索引，当前版本暂时沿用历史 `Yuncii\FontManager` 数据目录。后续如果迁移到 Ziio 命名空间，需要提供自动迁移或显式导入流程。
+If the project later migrates to a Ziio-named data namespace, it should provide an automatic migration or an explicit import flow from the historical directory.
 
-## Development / 开发
+### Development
 
 Run the app in live development mode:
 
@@ -103,9 +97,7 @@ The portable executable is usually generated at:
 build\bin\ZiioFontManager.exe
 ```
 
-中文说明：日常开发使用 `wails dev`；改后端运行 `go test ./...`；改前端运行 `npm run build`；发布前运行 `wails build -webview2 embed`。
-
-## Beta Roadmap / Beta 规划
+### Beta Roadmap
 
 Ziio is moving from MVP completeness toward Beta reliability. The current priorities are:
 
@@ -115,9 +107,7 @@ Ziio is moving from MVP completeness toward Beta reliability. The current priori
 - UI polish for empty states, loading states, long paths, long family names, batch selection, and responsive layout.
 - Release engineering: version synchronization, build artifact policy, portable/installer packaging, and release checklist.
 
-中文概览：Beta 阶段重点是大字体库稳定性、所有用户安装权限体验、预览缓存治理、UI 细节打磨和发布工程。
-
-## Current Limitations / 当前限制
+### Current Limitations
 
 - All-users install/uninstall currently requires running the app as administrator; an automatic UAC helper is not implemented yet.
 - WOFF and WOFF2 are indexed and previewed, but are not installed into Windows by default.
@@ -125,4 +115,117 @@ Ziio is moving from MVP completeness toward Beta reliability. The current priori
 - First-time indexing of very large font libraries can still take time, although it no longer blocks the add-library action.
 - A single font metadata parse is capped at 12 seconds; timed-out fonts are marked as errors and skipped so the scan can continue.
 
-中文说明：当前限制主要集中在管理员权限、旧字体格式兼容、超大库首次扫描耗时和坏字体降级处理。
+## 中文
+
+**Ziio Font Manager** 是一个面向 Windows 11 的本地优先字体管理桌面应用。项目使用 Wails、Go、React 和 TypeScript 构建，已经完成 MVP 阶段验证，当前进入 **Beta / v0.3 planning** 阶段。
+
+Ziio 面向真实的本地字体库管理流程：索引字体文件夹、扫描系统已安装字体、预览字体、检索字体元数据、收藏常用字体，并管理 Windows 字体安装记录。
+
+### 功能
+
+- **字体库管理：** 添加用户字体目录，扫描 Windows 系统字体目录，并按用户字体库和系统字库分开展示。
+- **后台索引：** 添加字体库、重新扫描和扫描系统字库都会启动后台任务，避免大目录阻塞界面。
+- **搜索和筛选：** 支持按 family、样式、文件名或路径搜索，并支持收藏和已安装状态筛选。
+- **文件夹导航：** 通过内嵌文件夹树浏览已索引字体，支持按层级展开，并持久化界面展开状态。
+- **分页加载：** 字体结果每页加载 20 条，滚动接近底部时自动追加下一页。
+- **字体预览：** 只为可见字体懒生成预览资源，支持自定义样本文字和字号。
+- **字体详情：** 展示格式、文件大小、字形数量、版本、厂商、PostScript 名称、安装记录和错误状态。
+- **Windows 字体操作：** 支持复制安装、快捷安装、卸载，并可选择当前用户或所有用户安装范围。
+- **操作反馈：** 安装进度和失败信息通过 Wails 事件回传，并在界面中展示。
+
+### 技术栈
+
+- 桌面壳：Wails v2.12
+- 后端：Go 1.25
+- 前端：React 18、TypeScript 4.6、Vite 3
+- 图标：lucide-react
+- 数据库：SQLite，使用纯 Go 驱动 `modernc.org/sqlite`
+- 字体解析与预览生成：`github.com/tdewolff/font`
+- Windows 集成：Registry、GDI `AddFontResourceEx` / `RemoveFontResourceEx`、`WM_FONTCHANGE`
+
+### 项目结构
+
+```text
+.
+├── app.go                       # Wails 应用初始化、服务绑定和预览字体处理
+├── main.go                      # Wails 启动入口
+├── go.mod / go.sum              # Go 依赖
+├── wails.json                   # Wails 项目配置
+├── internal/
+│   ├── appdirs/                 # 应用数据目录和缓存目录解析
+│   ├── fontmeta/                # 字体格式识别、元数据解析、预览子集生成
+│   ├── library/                 # 暴露给 Wails 前端的字体库、字体和安装服务
+│   ├── models/                  # 前后端共享数据模型
+│   ├── scanner/                 # 文件夹扫描、增量索引、解析超时保护
+│   ├── store/                   # SQLite schema、查询、收藏、安装记录、扫描任务
+│   └── winfont/                 # Windows 字体安装/卸载、注册表和权限边界
+├── frontend/
+│   ├── src/                     # React 应用源码
+│   ├── wailsjs/                 # Wails 生成的前端绑定
+│   └── package.json             # 前端依赖和脚本
+└── build/                       # Wails 构建资源和本地构建产物
+```
+
+`frontend/node_modules`、`frontend/dist` 和 `build/bin` 是依赖或生成产物，不属于核心源码目录。
+
+### 数据位置
+
+为了避免品牌重命名后丢失已有索引，当前版本暂时沿用历史数据命名空间：
+
+- 持久化数据：`%APPDATA%\Yuncii\FontManager`
+- SQLite 数据库：`%APPDATA%\Yuncii\FontManager\fontmanager.db`
+- 预览缓存：`%LOCALAPPDATA%\Yuncii\FontManager\cache`
+- 预览字体文件：`%LOCALAPPDATA%\Yuncii\FontManager\cache\previews`
+
+如果后续迁移到 Ziio 命名空间，应提供从历史目录自动迁移或显式导入的流程。
+
+### 开发
+
+以实时开发模式运行应用：
+
+```powershell
+wails dev
+```
+
+运行后端测试：
+
+```powershell
+go test ./...
+```
+
+运行前端生产构建检查：
+
+```powershell
+Set-Location frontend
+npm run build
+```
+
+构建 Windows 可执行文件：
+
+```powershell
+wails build -webview2 embed
+```
+
+便携版可执行文件通常生成在：
+
+```text
+build\bin\ZiioFontManager.exe
+```
+
+### Beta 规划
+
+Ziio 当前正在从 MVP 完整性转向 Beta 可靠性。当前优先事项包括：
+
+- 提升超大字体库扫描稳定性，包括取消、重试和更清晰的错误状态。
+- 改善所有用户安装/卸载体验，包括 UAC 提权流程和更安全的卸载策略。
+- 增加预览缓存清理、预览任务可观测性，并为旧格式或损坏字体提供更清晰的降级说明。
+- 打磨空状态、加载状态、长路径、长 family 名称、批量选择和响应式布局。
+- 完善发布工程，包括版本同步、构建产物策略、便携包/安装包和发布检查清单。
+
+### 当前限制
+
+- 所有用户范围的安装/卸载当前需要以管理员身份运行应用，自动 UAC helper 尚未实现。
+- WOFF 和 WOFF2 会参与索引和预览，但默认不会安装到 Windows 系统字体中。
+- Type1、FON、FNT、FOT 等旧格式按尽力管理处理，元数据和预览支持可能受限。
+- 首次索引超大字体库仍可能耗时较长，但不会再阻塞添加字体库操作。
+- 单个字体元数据解析限制为 12 秒；超时字体会被标记为错误并跳过，避免阻塞整个扫描任务。
