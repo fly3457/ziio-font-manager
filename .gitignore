@@ -20,3 +20,4 @@ Thumbs.db
 # Test/coverage output
 coverage/
 *.cover
+/design/logo.ai
