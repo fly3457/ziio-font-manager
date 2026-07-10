@@ -4,7 +4,6 @@ import brandLogo from './assets/images/logo.svg';
 import {
     AlertTriangle,
     CheckCircle2,
-    Columns3,
     Download,
     ExternalLink,
     FolderOpen,
@@ -30,6 +29,7 @@ import {
     api,
     type AppInfo,
     type FontDetail,
+    type FontStats,
     type FontFolder,
     type FontItem,
     type FontQuery,
@@ -81,6 +81,7 @@ function App() {
     const [query, setQuery] = useState('');
     const [favoritesOnly, setFavoritesOnly] = useState(false);
     const [installedOnly, setInstalledOnly] = useState(false);
+    const [fontStats, setFontStats] = useState<FontStats>({favoriteCount: 0, installedCount: 0});
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const [cardColumns, setCardColumns] = useState<CardColumnCount>(3);
     const [installScope, setInstallScope] = useState<'user' | 'machine'>('user');
@@ -126,6 +127,7 @@ function App() {
 
     useEffect(() => {
         loadRoots();
+        loadFontStats();
         loadFonts(true);
         api.appInfo()
             .then(info => setAppInfo(info))
@@ -198,6 +200,7 @@ function App() {
             if (selectedRoot > 0) {
                 loadFolders(selectedRoot);
             }
+            loadFontStats();
             loadFonts(true);
         }, 2000);
         return () => window.clearInterval(timer);
@@ -287,9 +290,28 @@ function App() {
     async function loadRoots() {
         try {
             const next = await api.listRoots();
-            setRoots(next ?? []);
+            const normalized = next ?? [];
+            setRoots(normalized);
+            const selectedRootMissing = selectedRoot > 0 && !normalized.some(root => root.id === selectedRoot);
+            if ((selectedRoot === 0 || selectedRootMissing) && !favoritesOnly && !installedOnly) {
+                const fallback = preferredRoot(normalized);
+                if (fallback) {
+                    setSelectedRoot(fallback.id);
+                    setSelectedFolder('');
+                }
+            }
+            return normalized;
         } catch (error) {
             showError(error);
+            return [];
+        }
+    }
+
+    async function loadFontStats() {
+        try {
+            setFontStats(await api.fontStats());
+        } catch (error) {
+            logFrontendWarning(`font stats failed error=${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
@@ -337,6 +359,7 @@ function App() {
             setInstalledOnly(false);
             setNotice({type: 'success', text: t('notices.addedRoot', {name: root.name})});
             await loadRoots();
+            await loadFontStats();
             await loadFolders(root.id);
             await loadFonts(true);
         });
@@ -410,6 +433,7 @@ function App() {
             if (rootId > 0) {
                 loadFolders(rootId);
             }
+            loadFontStats();
             loadFonts(true);
         }, 600);
     }
@@ -516,10 +540,16 @@ function App() {
                 setSelectedFace(null);
                 setDetail(null);
             }
-            await loadRoots();
+            const nextRoots = await loadRoots();
+            await loadFontStats();
+            const fallbackRoot = deletingActiveRoot ? preferredRoot(nextRoots) : null;
+            if (fallbackRoot) {
+                setSelectedRoot(fallbackRoot.id);
+                await loadFolders(fallbackRoot.id);
+            }
             await loadFonts(
                 true,
-                deletingActiveRoot ? {rootId: 0, folderPath: '', favoritesOnly: false, installedOnly: false} : {},
+                deletingActiveRoot ? {rootId: fallbackRoot?.id ?? 0, folderPath: '', favoritesOnly: false, installedOnly: false} : {},
                 !deletingActiveRoot
             );
             setNotice({type: 'success', text: t('notices.removedRoot', {name: root.name})});
@@ -553,6 +583,10 @@ function App() {
             if (detail?.faceId === font.faceId) {
                 setDetail({...detail, isFavorite: !font.isFavorite});
             }
+            await loadFontStats();
+            if (favoritesOnly) {
+                await loadFonts(true);
+            }
         } catch (error) {
             showError(error);
         }
@@ -582,6 +616,7 @@ function App() {
             const result = await api.installFonts(activeIds, mode, installScope);
             applyOperationNotice(result);
             await loadFonts(true);
+            await loadFontStats();
             if (selectedFace) {
                 setDetail(await api.getFontDetail(selectedFace));
             }
@@ -601,6 +636,7 @@ function App() {
             const result = await api.uninstallFonts(activeIds, true);
             applyOperationNotice(result);
             await loadFonts(true);
+            await loadFontStats();
             if (selectedFace) {
                 setDetail(await api.getFontDetail(selectedFace));
             }
@@ -1063,29 +1099,25 @@ function App() {
                 </div>
 
                 <nav className="nav-list">
-                    <button className={selectedRoot === 0 && !favoritesOnly && !installedOnly ? 'active' : ''} onClick={() => {
+                    <button className={favoritesOnly ? 'active' : ''} onClick={() => {
                         setSelectedRoot(0);
                         setSelectedFolder('');
-                        setFavoritesOnly(false);
-                        setInstalledOnly(false);
-                    }}>
-                        <Columns3 size={17}/>
-                        <span>{t('nav.allIndexed')}</span>
-                        <b>{fonts.length}</b>
-                    </button>
-                    <button className={favoritesOnly ? 'active' : ''} onClick={() => {
                         setFavoritesOnly(true);
                         setInstalledOnly(false);
                     }}>
                         <Star size={17}/>
                         <span>{t('nav.favorites')}</span>
+                        <b>{fontStats.favoriteCount}</b>
                     </button>
                     <button className={installedOnly ? 'active' : ''} onClick={() => {
+                        setSelectedRoot(0);
+                        setSelectedFolder('');
                         setInstalledOnly(true);
                         setFavoritesOnly(false);
                     }}>
                         <HardDriveDownload size={17}/>
                         <span>{t('nav.installed')}</span>
+                        <b>{fontStats.installedCount}</b>
                     </button>
                 </nav>
 
@@ -1561,6 +1593,10 @@ function rootMenuKey(root: LibraryRoot) {
 
 function folderMenuKey(root: LibraryRoot, folder: FontFolder) {
     return `folder:${root.id}:${folder.path}`;
+}
+
+function preferredRoot(roots: LibraryRoot[]) {
+    return roots.find(root => root.kind !== 'system') ?? roots[0] ?? null;
 }
 
 function loadExpandedFolderKeys() {

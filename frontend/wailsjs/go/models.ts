@@ -240,6 +240,20 @@ export namespace models {
 	        this.offset = source["offset"];
 	    }
 	}
+	export class FontStats {
+	    favoriteCount: number;
+	    installedCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new FontStats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.favoriteCount = source["favoriteCount"];
+	        this.installedCount = source["installedCount"];
+	    }
+	}
 	
 	export class LibraryRoot {
 	    id: number;

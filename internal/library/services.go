@@ -271,6 +271,10 @@ func (s *FontService) SearchFonts(query models.FontQuery) ([]models.FontItem, er
 	return s.store.QueryFonts(query)
 }
 
+func (s *FontService) GetFontStats() (models.FontStats, error) {
+	return s.store.FontStats()
+}
+
 func (s *FontService) GetFontDetail(faceID int64) (models.FontDetail, error) {
 	return s.store.FontDetail(faceID)
 }

@@ -6,6 +6,10 @@ export function GetFontDetail(arg1) {
   return window['go']['library']['FontService']['GetFontDetail'](arg1);
 }
 
+export function GetFontStats() {
+  return window['go']['library']['FontService']['GetFontStats']();
+}
+
 export function GetPreview(arg1, arg2) {
   return window['go']['library']['FontService']['GetPreview'](arg1, arg2);
 }

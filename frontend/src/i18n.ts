@@ -38,10 +38,9 @@ const resources = {
                 reveal: '位置'
             },
             nav: {
-                allIndexed: '全部已索引字体',
-                favorites: '收藏',
+                favorites: '已收藏',
                 installed: '已安装',
-                userLibraries: '用户字体库',
+                userLibraries: '用户字库',
                 systemLibraries: '系统字库',
                 allFonts: '全部字体'
             },
@@ -166,7 +165,6 @@ const resources = {
                 reveal: 'Location'
             },
             nav: {
-                allIndexed: 'All Indexed Fonts',
                 favorites: 'Favorites',
                 installed: 'Installed',
                 userLibraries: 'User Libraries',

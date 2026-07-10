@@ -91,6 +91,13 @@ func TestStoreQueryFavoriteAndInstallRecord(t *testing.T) {
 	if len(installed) != 1 || !installed[0].IsInstalled {
 		t.Fatalf("installed query returned %#v", installed)
 	}
+	stats, err := db.FontStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.FavoriteCount != 1 || stats.InstalledCount != 1 {
+		t.Fatalf("stats = %#v, want favorite=1 installed=1", stats)
+	}
 }
 
 func TestStoreFolderListingAndFolderQuery(t *testing.T) {

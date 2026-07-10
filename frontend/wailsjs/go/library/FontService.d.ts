@@ -5,6 +5,8 @@ import {context} from '../models';
 
 export function GetFontDetail(arg1:number):Promise<models.FontDetail>;
 
+export function GetFontStats():Promise<models.FontStats>;
+
 export function GetPreview(arg1:number,arg2:string):Promise<models.PreviewResponse>;
 
 export function RevealInExplorer(arg1:number):Promise<void>;

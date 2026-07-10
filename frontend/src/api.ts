@@ -65,6 +65,11 @@ export type FontItem = {
   updatedAt: string;
 };
 
+export type FontStats = {
+  favoriteCount: number;
+  installedCount: number;
+};
+
 export type InstallRecord = {
   id: number;
   fileId: number;
@@ -184,6 +189,7 @@ export const api = {
   rescanFolder: (rootId: number, folderPath: string) => service("LibraryService").RescanFolder(rootId, folderPath) as Promise<ScanResult>,
   removeRoot: (id: number) => service("LibraryService").RemoveRoot(id),
   searchFonts: (query: FontQuery) => service("FontService").SearchFonts(query) as Promise<FontItem[]>,
+  fontStats: () => service("FontService").GetFontStats() as Promise<FontStats>,
   getFontDetail: (faceId: number) => service("FontService").GetFontDetail(faceId) as Promise<FontDetail>,
   setFavorite: (faceId: number, favorite: boolean) => service("FontService").SetFavorite(faceId, favorite),
   getPreview: (faceId: number, sampleText: string) => service("FontService").GetPreview(faceId, sampleText) as Promise<PreviewResponse>,

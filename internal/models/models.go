@@ -114,6 +114,11 @@ type FontQuery struct {
 	Offset          int    `json:"offset"`
 }
 
+type FontStats struct {
+	FavoriteCount  int64 `json:"favoriteCount"`
+	InstalledCount int64 `json:"installedCount"`
+}
+
 type PreviewResponse struct {
 	FaceID           int64   `json:"faceId"`
 	FontFamily       string  `json:"fontFamily"`

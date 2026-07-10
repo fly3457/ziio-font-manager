@@ -704,40 +704,9 @@ func (s *Store) QueryFonts(q models.FontQuery) ([]models.FontItem, error) {
 		q.Offset = 0
 	}
 
-	where := []string{"ff.status != 'missing'"}
-	args := []any{}
-	if q.RootID > 0 {
-		where = append(where, "ff.root_id = ?")
-		args = append(args, q.RootID)
-	}
-	if q.RootID > 0 && strings.TrimSpace(q.FolderPath) != "" {
-		root, err := s.RootByID(q.RootID)
-		if err != nil {
-			return nil, err
-		}
-		folderAbs := filepath.Join(root.Path, filepath.Clean(filepath.FromSlash(q.FolderPath)))
-		prefix := escapeLike(folderAbs)
-		if q.FolderRecursive {
-			where = append(where, `ff.path LIKE ? ESCAPE '\'`)
-			args = append(args, prefix+`\\%`)
-		} else {
-			where = append(where, `ff.path LIKE ? ESCAPE '\'`)
-			args = append(args, prefix+`\\%`)
-		}
-	}
-	if q.FavoritesOnly {
-		where = append(where, "fav.face_id IS NOT NULL")
-	}
-	if q.InstalledOnly {
-		where = append(where, `EXISTS (
-			SELECT 1 FROM install_records ir
-			WHERE ir.file_id = ff.id AND ir.status = 'installed' AND ir.uninstalled_at = ''
-		)`)
-	}
-	if strings.TrimSpace(q.Query) != "" {
-		like := "%" + strings.ToLower(strings.TrimSpace(q.Query)) + "%"
-		where = append(where, `(LOWER(face.family) LIKE ? OR LOWER(face.full_name) LIKE ? OR LOWER(face.style) LIKE ? OR LOWER(ff.file_name) LIKE ? OR LOWER(ff.path) LIKE ?)`)
-		args = append(args, like, like, like, like, like)
+	where, args, err := s.fontQueryWhere(q)
+	if err != nil {
+		return nil, err
 	}
 	args = append(args, q.Limit, q.Offset)
 
@@ -774,6 +743,76 @@ func (s *Store) QueryFonts(q models.FontQuery) ([]models.FontItem, error) {
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *Store) CountFonts(q models.FontQuery) (int64, error) {
+	where, args, err := s.fontQueryWhere(q)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = s.db.QueryRow(`
+		SELECT COUNT(DISTINCT face.id)
+		FROM font_faces face
+		JOIN font_files ff ON ff.id = face.file_id
+		JOIN library_roots r ON r.id = ff.root_id
+		LEFT JOIN favorites fav ON fav.face_id = face.id
+		WHERE `+strings.Join(where, " AND "), args...).Scan(&count)
+	return count, err
+}
+
+func (s *Store) FontStats() (models.FontStats, error) {
+	favorites, err := s.CountFonts(models.FontQuery{FavoritesOnly: true})
+	if err != nil {
+		return models.FontStats{}, err
+	}
+	installed, err := s.CountFonts(models.FontQuery{InstalledOnly: true})
+	if err != nil {
+		return models.FontStats{}, err
+	}
+	return models.FontStats{
+		FavoriteCount:  favorites,
+		InstalledCount: installed,
+	}, nil
+}
+
+func (s *Store) fontQueryWhere(q models.FontQuery) ([]string, []any, error) {
+	where := []string{"ff.status != 'missing'"}
+	args := []any{}
+	if q.RootID > 0 {
+		where = append(where, "ff.root_id = ?")
+		args = append(args, q.RootID)
+	}
+	if q.RootID > 0 && strings.TrimSpace(q.FolderPath) != "" {
+		root, err := s.RootByID(q.RootID)
+		if err != nil {
+			return nil, nil, err
+		}
+		folderAbs := filepath.Join(root.Path, filepath.Clean(filepath.FromSlash(q.FolderPath)))
+		prefix := escapeLike(folderAbs)
+		if q.FolderRecursive {
+			where = append(where, `ff.path LIKE ? ESCAPE '\'`)
+			args = append(args, prefix+`\\%`)
+		} else {
+			where = append(where, `ff.path LIKE ? ESCAPE '\'`)
+			args = append(args, prefix+`\\%`)
+		}
+	}
+	if q.FavoritesOnly {
+		where = append(where, "fav.face_id IS NOT NULL")
+	}
+	if q.InstalledOnly {
+		where = append(where, `EXISTS (
+			SELECT 1 FROM install_records ir
+			WHERE ir.file_id = ff.id AND ir.status = 'installed' AND ir.uninstalled_at = ''
+		)`)
+	}
+	if strings.TrimSpace(q.Query) != "" {
+		like := "%" + strings.ToLower(strings.TrimSpace(q.Query)) + "%"
+		where = append(where, `(LOWER(face.family) LIKE ? OR LOWER(face.full_name) LIKE ? OR LOWER(face.style) LIKE ? OR LOWER(ff.file_name) LIKE ? OR LOWER(ff.path) LIKE ?)`)
+		args = append(args, like, like, like, like, like)
+	}
+	return where, args, nil
 }
 
 type scanner interface {
