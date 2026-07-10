@@ -141,18 +141,26 @@ type ScanStatus struct {
 	Added      int    `json:"added"`
 	Updated    int    `json:"updated"`
 	Failed     int    `json:"failed"`
+	Missing    int    `json:"missing"`
+	Unchanged  int    `json:"unchanged"`
+	Scope      string `json:"scope"`
+	ScopePath  string `json:"scopePath"`
 	Message    string `json:"message"`
 	StartedAt  string `json:"startedAt"`
 	FinishedAt string `json:"finishedAt"`
 }
 
 type ScanResult struct {
-	RootID    int64 `json:"rootId"`
-	Total     int   `json:"total"`
-	Processed int   `json:"processed"`
-	Added     int   `json:"added"`
-	Updated   int   `json:"updated"`
-	Failed    int   `json:"failed"`
+	RootID    int64  `json:"rootId"`
+	Total     int    `json:"total"`
+	Processed int    `json:"processed"`
+	Added     int    `json:"added"`
+	Updated   int    `json:"updated"`
+	Failed    int    `json:"failed"`
+	Missing   int    `json:"missing"`
+	Unchanged int    `json:"unchanged"`
+	Scope     string `json:"scope"`
+	ScopePath string `json:"scopePath"`
 }
 
 type InstallRecord struct {

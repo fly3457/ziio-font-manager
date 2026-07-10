@@ -15,6 +15,10 @@ export function ListRoots():Promise<Array<models.LibraryRoot>>;
 
 export function RemoveRoot(arg1:number):Promise<void>;
 
+export function RescanAllRoots():Promise<number>;
+
+export function RescanFolder(arg1:number,arg2:string):Promise<models.ScanResult>;
+
 export function RescanRoot(arg1:number):Promise<models.ScanResult>;
 
 export function ScanSystemFonts():Promise<Array<models.LibraryRoot>>;

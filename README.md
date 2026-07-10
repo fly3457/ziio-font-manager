@@ -2,27 +2,31 @@
 
 ## English
 
-**Ziio Font Manager** is a local-first desktop font manager for Windows 11. It is built with Wails, Go, React, and TypeScript, and is currently in **Beta / v0.3 planning**.
+**Ziio Font Manager 0.2.0** is a local-first desktop font manager for Windows 11. It is built with Wails, Go, React, and TypeScript, and is currently in **Beta / v0.3 planning**.
 
 Ziio focuses on practical local font-library workflows: indexing font folders, scanning installed system fonts, previewing typefaces, searching metadata, collecting favorites, and managing Windows font installation records.
 
 ### Features
 
-- **Library management:** add user font folders and scan Windows system font locations, shown separately as user libraries and system libraries.
-- **Background indexing:** adding, rescanning, and system-font scanning run as background jobs so large folders do not block the UI.
+- **Library management:** add user font folders, scan Windows system font locations, and safely remove user libraries from Ziio without deleting source files.
+- **Background indexing:** adding, full rescans, single-library sync, folder-level sync, and system-font scanning run as background jobs so large folders do not block the UI.
+- **Incremental sync:** unchanged files are skipped, changed files are reparsed, new files are added, and missing files are removed from normal index views.
 - **Search and filters:** search by family, style, file name, or path; filter by favorites and installed status.
-- **Folder navigation:** browse indexed fonts through an embedded folder tree with expandable levels and persisted UI state.
+- **Folder navigation:** browse indexed fonts through an embedded folder tree with expandable levels, persisted UI state, and per-folder sync actions.
+- **Workspace layout:** resize the left library navigation and right detail panel, with layout preferences saved locally.
+- **Settings and i18n:** open a settings dialog for app information and switch between Chinese and English UI text.
 - **Paged result loading:** font results load in pages of 20 and continue automatically when the list is scrolled near the bottom.
 - **Font previews:** previews are generated lazily for visible fonts, with custom sample text and font-size controls.
 - **Font details:** inspect format, file size, glyph count, version, manufacturer, PostScript name, install records, and error status.
 - **Windows font operations:** install by copy, install by link, uninstall, and choose between current-user and all-users scopes.
 - **Operation feedback:** installation progress and failures are reported through Wails events and shown in the UI.
+- **Diagnostics:** scan and app logs are written under `%APPDATA%\Ziio\FontManager\logs` to help locate damaged fonts, parser failures, and interrupted scans.
 
 ### Tech Stack
 
 - Desktop shell: Wails v2.12
 - Backend: Go 1.25
-- Frontend: React 18, TypeScript 4.6, Vite 3
+- Frontend: React 18, TypeScript 5.9, Vite 3
 - Icons: lucide-react
 - Database: SQLite via the pure-Go driver `modernc.org/sqlite`
 - Font parsing and preview generation: `github.com/tdewolff/font`
@@ -88,7 +92,7 @@ build\bin\ZiioFontManager.exe
 
 ### Beta Roadmap
 
-Ziio is moving from MVP completeness toward Beta reliability. The current priorities are:
+Ziio 0.2.0 has the main local-font workflow in place and is moving from MVP completeness toward Beta reliability. The current priorities are:
 
 - Scanning stability for very large font libraries, including cancellation, retry, and clearer error states.
 - Better all-users install/uninstall experience, including UAC elevation flow and safer uninstall policies.
@@ -106,27 +110,31 @@ Ziio is moving from MVP completeness toward Beta reliability. The current priori
 
 ## 中文
 
-**Ziio Font Manager** 是一个面向 Windows 11 的本地优先字体管理桌面应用。项目使用 Wails、Go、React 和 TypeScript 构建，当前处于 **Beta / v0.3 planning** 阶段。
+**Ziio Font Manager 0.2.0** 是一个面向 Windows 11 的本地优先字体管理桌面应用。项目使用 Wails、Go、React 和 TypeScript 构建，当前处于 **Beta / v0.3 planning** 阶段。
 
 Ziio 面向真实的本地字体库管理流程：索引字体文件夹、扫描系统已安装字体、预览字体、检索字体元数据、收藏常用字体，并管理 Windows 字体安装记录。
 
 ### 功能
 
-- **字体库管理：** 添加用户字体目录，扫描 Windows 系统字体目录，并按用户字体库和系统字库分开展示。
-- **后台索引：** 添加字体库、重新扫描和扫描系统字库都会启动后台任务，避免大目录阻塞界面。
+- **字体库管理：** 添加用户字体目录，扫描 Windows 系统字体目录，并可从 Ziio 安全移除用户字体库索引，不删除源文件。
+- **后台索引：** 添加字体库、全量重新扫描、单字体库同步、单文件夹同步和扫描系统字库都会启动后台任务，避免大目录阻塞界面。
+- **增量同步：** 未变化文件会跳过解析，已修改文件会重新解析，新文件会加入索引，缺失文件会从常规列表中隐藏。
 - **搜索和筛选：** 支持按 family、样式、文件名或路径搜索，并支持收藏和已安装状态筛选。
-- **文件夹导航：** 通过内嵌文件夹树浏览已索引字体，支持按层级展开，并持久化界面展开状态。
+- **文件夹导航：** 通过内嵌文件夹树浏览已索引字体，支持按层级展开、持久化界面展开状态，并可对单个文件夹执行同步。
+- **工作区布局：** 左侧字体库导航和右侧详情栏可拖拽调整宽度，并在本地保存布局偏好。
+- **设置与多语言：** 设置弹窗显示应用信息，界面文案支持中文和英文切换。
 - **分页加载：** 字体结果每页加载 20 条，滚动接近底部时自动追加下一页。
 - **字体预览：** 只为可见字体懒生成预览资源，支持自定义样本文字和字号。
 - **字体详情：** 展示格式、文件大小、字形数量、版本、厂商、PostScript 名称、安装记录和错误状态。
 - **Windows 字体操作：** 支持复制安装、快捷安装、卸载，并可选择当前用户或所有用户安装范围。
 - **操作反馈：** 安装进度和失败信息通过 Wails 事件回传，并在界面中展示。
+- **诊断日志：** 扫描日志和应用日志写入 `%APPDATA%\Ziio\FontManager\logs`，用于定位损坏字体、解析失败和中断扫描。
 
 ### 技术栈
 
 - 桌面壳：Wails v2.12
 - 后端：Go 1.25
-- 前端：React 18、TypeScript 4.6、Vite 3
+- 前端：React 18、TypeScript 5.9、Vite 3
 - 图标：lucide-react
 - 数据库：SQLite，使用纯 Go 驱动 `modernc.org/sqlite`
 - 字体解析与预览生成：`github.com/tdewolff/font`

@@ -2,13 +2,13 @@
 
 ## 状态
 
-- 当前阶段：Beta / v0.3 planning。
-- 最后更新：2026-07-03。
+- 当前阶段：0.2.0 / Beta，v0.3 planning。
+- 最后更新：2026-07-10。
 - 当前目标：在 MVP 能力已经跑通的基础上，补齐稳定性、权限体验、可观测性、发布工程和文档体系。
 
 ## 摘要
 
-Ziio Font Manager 是一个 Windows 11 本地字体管理工具，技术栈为 Go、Wails v2.12、React、TypeScript、Vite 和 SQLite。当前版本已经具备字体库扫描、系统字库扫描、字体检索、收藏、文件夹树、懒加载预览、安装 / 卸载和基础操作反馈能力。
+Ziio Font Manager 是一个 Windows 11 本地字体管理工具，技术栈为 Go、Wails v2.12、React、TypeScript、Vite 和 SQLite。当前 0.2.0 版本已经具备字体库扫描、系统字库扫描、字体检索、收藏、文件夹树、懒加载预览、安装 / 卸载、设置弹窗、中英文 i18n 和基础操作反馈能力。
 
 Beta 阶段不再以“补齐主流程”为核心，而是转向面向真实字体库和真实 Windows 环境的可靠性打磨：大目录扫描不能拖住应用，坏字体不能拖住扫描，权限失败必须可理解，批量操作必须可追踪，构建和发布流程必须可重复。
 
@@ -18,7 +18,7 @@ Beta 阶段不再以“补齐主流程”为核心，而是转向面向真实字
 
 - 桌面壳使用 Wails v2.12，入口在 `main.go`，窗口标题为 `Ziio Font Manager`，默认尺寸为 1360x860。
 - 后端使用 Go 1.25，核心依赖包括 `modernc.org/sqlite`、`github.com/tdewolff/font`、`golang.org/x/sys` 和 Wails。
-- 前端使用 React 18、TypeScript 4.6、Vite 3 和 `lucide-react`，主界面集中在 `frontend/src/App.tsx`。
+- 前端使用 React 18、TypeScript 5.9、Vite 3 和 `lucide-react`，主界面集中在 `frontend/src/App.tsx`。
 - Wails 绑定服务包括 `LibraryService`、`FontService`、`InstallService` 和 `App.GetAppInfo()`。
 - 预览字体通过 Wails AssetServer 的自定义 handler 暴露为 `/preview-fonts/*.otf`。
 
@@ -73,6 +73,8 @@ Beta 阶段不再以“补齐主流程”为核心，而是转向面向真实字
 
 - 主界面由左侧字体库 / 文件夹导航、中间字体结果区、右侧详情面板组成。
 - 支持全部字体、收藏、已安装筛选；支持搜索、视图模式切换、网格列数切换、样本文字和字号调整。
+- 左侧导航和右侧详情栏宽度可拖拽调整，布局偏好保存到 `localStorage`。
+- UI 文案通过 `i18next` / `react-i18next` 管理，当前支持中文和英文。
 - 文件夹展开状态保存到 `localStorage`，键名为 `ziio.fontManager.expandedFolders.v1`。
 - 字体列表每页 20 条，滚动接近底部时自动加载下一页。
 - 安装进度通过 `font-operation-progress` 事件推送到前端，并用模态进度条展示。
@@ -85,6 +87,7 @@ Beta 阶段不再以“补齐主流程”为核心，而是转向面向真实字
 - v0.2.2：文件夹树改为按层级展开，并把展开状态持久化到浏览器 `localStorage`。
 - v0.2.3：增加单文件解析 12 秒超时、错误字体入库和旧 `running` 扫描任务重置。
 - v0.2.4：移除手动“再加载 20 个”按钮，改为触底自动加载下一页。
+- 0.2.0：完成用户字体库安全移除、字体库 / 文件夹级同步、大字体库扫描 panic recovery、扫描诊断日志、嵌套字体库保护、三栏可拖拽布局、品牌图标接入、TypeScript 5.9 升级、中英文 i18n 和设置弹窗。
 
 ## 关键决策
 

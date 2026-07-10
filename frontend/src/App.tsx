@@ -1,5 +1,6 @@
-import {memo, type CSSProperties, type UIEvent, useEffect, useRef, useState} from 'react';
+import {memo, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type UIEvent, useEffect, useRef, useState} from 'react';
 import './App.css';
+import brandLogo from './assets/images/logo.svg';
 import {
     AlertTriangle,
     CheckCircle2,
@@ -13,16 +14,21 @@ import {
     Info,
     Link2,
     List,
+    MoreHorizontal,
     RefreshCw,
     Search,
     Server,
+    Settings,
     Star,
     Trash2,
     X
 } from 'lucide-react';
+import {useTranslation} from 'react-i18next';
+import type {TFunction} from 'i18next';
 import {EventsOn, LogInfo, LogWarning} from '../wailsjs/runtime/runtime';
 import {
     api,
+    type AppInfo,
     type FontDetail,
     type FontFolder,
     type FontItem,
@@ -32,6 +38,7 @@ import {
     type OperationResult,
     type PreviewResponse
 } from './api';
+import {DEFAULT_SAMPLE_TEXTS, LANGUAGE_STORAGE_KEY, SUPPORTED_LANGUAGES, type SupportedLanguage} from './i18n';
 
 const PAGE_SIZE = 20;
 const PREVIEW_CONCURRENCY = 2;
@@ -39,13 +46,26 @@ const PREVIEW_LRU_LIMIT = 1000;
 const PREVIEW_ROOT_MARGIN = '900px 0px';
 const PREVIEW_SLOW_MS = 300;
 const EXPANDED_FOLDERS_KEY = 'ziio.fontManager.expandedFolders.v1';
+const LAYOUT_PREFS_KEY = 'ziio.fontManager.layout.v1';
 const CARD_COLUMN_OPTIONS = [2, 3, 4, 5] as const;
+const DEFAULT_LAYOUT_PREFS = {sidebarWidth: 250, detailWidth: 320};
+const SIDEBAR_MIN = 210;
+const SIDEBAR_MAX = 420;
+const DETAIL_MIN = 280;
+const DETAIL_MAX = 520;
+const MIDDLE_MIN = 440;
+const RESIZE_HANDLE_TOTAL = 12;
 
 type ViewMode = 'list' | 'grid';
 type CardColumnCount = typeof CARD_COLUMN_OPTIONS[number];
 type PreviewQueueItem = {faceId: number; generation: number; sampleText: string};
+type LayoutPrefs = {sidebarWidth: number; detailWidth: number};
+type ActionMenuState =
+    | {type: 'root'; root: LibraryRoot; key: string; left: number; top: number}
+    | {type: 'folder'; root: LibraryRoot; folder: FontFolder; key: string; left: number; top: number};
 
 function App() {
+    const {t, i18n} = useTranslation();
     const [roots, setRoots] = useState<LibraryRoot[]>([]);
     const [folders, setFolders] = useState<FontFolder[]>([]);
     const [fonts, setFonts] = useState<FontItem[]>([]);
@@ -64,13 +84,20 @@ function App() {
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const [cardColumns, setCardColumns] = useState<CardColumnCount>(3);
     const [installScope, setInstallScope] = useState<'user' | 'machine'>('user');
-    const [sampleText, setSampleText] = useState('永字八法 AaBbCc 0123456789');
+    const [sampleText, setSampleText] = useState(() => t('preview.sample'));
     const [fontSize, setFontSize] = useState(34);
     const [busy, setBusy] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [hasMore, setHasMore] = useState(false);
     const [notice, setNotice] = useState<{type: 'info' | 'error' | 'success', text: string} | null>(null);
     const [operationProgress, setOperationProgress] = useState<OperationProgress | null>(null);
+    const [layoutPrefs, setLayoutPrefs] = useState<LayoutPrefs>(loadLayoutPrefs);
+    const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+    const [collapsedRootIds, setCollapsedRootIds] = useState<number[]>([]);
+    const [gridColumnMenuOpen, setGridColumnMenuOpen] = useState(false);
+    const [gridColumnMenuSuppressedUntilLeave, setGridColumnMenuSuppressedUntilLeave] = useState(false);
 
     const activeIds = checkedFaces.length > 0 ? checkedFaces : selectedFace ? [selectedFace] : [];
     const activeRoot = roots.find(root => root.id === selectedRoot);
@@ -78,6 +105,7 @@ function App() {
     const systemRoots = roots.filter(root => root.kind === 'system');
     const anyScanning = roots.some(root => root.scanStatus === 'running');
     const resultsRef = useRef<HTMLElement | null>(null);
+    const actionMenuRef = useRef<HTMLDivElement | null>(null);
     const previewQueue = useRef<PreviewQueueItem[]>([]);
     const queuedPreviewIds = useRef<Set<string>>(new Set());
     const inFlightPreviewIds = useRef<Set<string>>(new Set());
@@ -99,11 +127,54 @@ function App() {
     useEffect(() => {
         loadRoots();
         loadFonts(true);
+        api.appInfo()
+            .then(info => setAppInfo(info))
+            .catch(error => logFrontendWarning(`app info failed error=${error instanceof Error ? error.message : String(error)}`));
     }, []);
 
     useEffect(() => {
         window.localStorage.setItem(EXPANDED_FOLDERS_KEY, JSON.stringify(expandedFolderKeys));
     }, [expandedFolderKeys]);
+
+    useEffect(() => {
+        setSampleText(current => {
+            const defaults = Object.values(DEFAULT_SAMPLE_TEXTS);
+            return defaults.includes(current) ? t('preview.sample') : current;
+        });
+    }, [i18n.language, t]);
+
+    useEffect(() => {
+        const resize = () => setLayoutPrefs(current => clampLayoutPrefs(current));
+        window.addEventListener('resize', resize);
+        return () => window.removeEventListener('resize', resize);
+    }, []);
+
+    useEffect(() => {
+        if (!actionMenu) {
+            return;
+        }
+        const closeOnOutsideClick = (event: PointerEvent) => {
+            const target = event.target as Node | null;
+            if (target && actionMenuRef.current?.contains(target)) {
+                return;
+            }
+            setActionMenu(null);
+        };
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setActionMenu(null);
+            }
+        };
+        const closeOnScroll = () => setActionMenu(null);
+        window.addEventListener('pointerdown', closeOnOutsideClick);
+        window.addEventListener('keydown', closeOnEscape);
+        window.addEventListener('scroll', closeOnScroll, true);
+        return () => {
+            window.removeEventListener('pointerdown', closeOnOutsideClick);
+            window.removeEventListener('keydown', closeOnEscape);
+            window.removeEventListener('scroll', closeOnScroll, true);
+        };
+    }, [actionMenu]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => loadFonts(true), 180);
@@ -264,7 +335,7 @@ function App() {
             setSelectedFolder('');
             setFavoritesOnly(false);
             setInstalledOnly(false);
-            setNotice({type: 'success', text: `已添加 ${root.name}，正在后台扫描`});
+            setNotice({type: 'success', text: t('notices.addedRoot', {name: root.name})});
             await loadRoots();
             await loadFolders(root.id);
             await loadFonts(true);
@@ -274,7 +345,7 @@ function App() {
     async function scanSystemFonts() {
         await runBusy(async () => {
             const next = await api.scanSystemFonts();
-            setNotice({type: 'success', text: `已开始扫描 ${next.length} 个系统字体目录`});
+            setNotice({type: 'success', text: t('notices.scanSystemStarted', {count: next.length})});
             await loadRoots();
             if (next[0]) {
                 setSelectedRoot(next[0].id);
@@ -283,29 +354,150 @@ function App() {
         });
     }
 
-    async function rescanRoot() {
-        const target = selectedRoot || roots[0]?.id;
-        if (!target) {
-            setNotice({type: 'info', text: '尚未添加字体库'});
+    async function rescanAllRoots() {
+        if (roots.length === 0) {
+            setNotice({type: 'info', text: t('notices.noRoots')});
             return;
         }
         await runBusy(async () => {
-            await api.rescanRoot(target);
-            setNotice({type: 'success', text: '已开始后台扫描'});
+            const queued = await api.rescanAllRoots();
+            setNotice({
+                type: queued > 0 ? 'success' : 'info',
+                text: queued > 0 ? t('notices.rescanAllStarted', {count: queued}) : t('notices.allRootsScanning')
+            });
             await loadRoots();
+            scheduleScanRefresh();
         });
+    }
+
+    async function rescanRoot(root: LibraryRoot) {
+        if (root.scanStatus === 'running') {
+            setNotice({type: 'info', text: t('notices.rootScanningSync')});
+            return;
+        }
+        await runBusy(async () => {
+            await api.rescanRoot(root.id);
+            setNotice({type: 'success', text: t('notices.syncRootStarted', {name: root.name})});
+            await loadRoots();
+            if (selectedRoot === root.id) {
+                await loadFolders(root.id);
+                await loadFonts(true);
+            }
+            scheduleScanRefresh(root.id);
+        });
+    }
+
+    async function rescanFolder(root: LibraryRoot, folder: FontFolder) {
+        if (root.scanStatus === 'running') {
+            setNotice({type: 'info', text: t('notices.rootScanningFolderSync')});
+            return;
+        }
+        await runBusy(async () => {
+            await api.rescanFolder(root.id, folder.path);
+            setNotice({type: 'success', text: t('notices.syncFolderStarted', {path: folder.path})});
+            await loadRoots();
+            if (selectedRoot === root.id) {
+                await loadFolders(root.id);
+                await loadFonts(true);
+            }
+            scheduleScanRefresh(root.id);
+        });
+    }
+
+    function scheduleScanRefresh(rootId = selectedRoot) {
+        window.setTimeout(() => {
+            loadRoots();
+            if (rootId > 0) {
+                loadFolders(rootId);
+            }
+            loadFonts(true);
+        }, 600);
+    }
+
+    function changeLanguage(language: SupportedLanguage) {
+        i18n.changeLanguage(language).catch(showError);
+        try {
+            window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+        } catch {
+            // localStorage can be unavailable in restricted WebView contexts.
+        }
+    }
+
+    function openRootActionMenu(root: LibraryRoot, event: ReactMouseEvent<HTMLButtonElement>) {
+        event.preventDefault();
+        event.stopPropagation();
+        setActionMenu({
+            type: 'root',
+            root,
+            key: rootMenuKey(root),
+            ...menuPosition(event.currentTarget.getBoundingClientRect(), root.kind === 'system' ? 104 : 148)
+        });
+    }
+
+    function openFolderActionMenu(root: LibraryRoot, folder: FontFolder, event: ReactMouseEvent<HTMLButtonElement>) {
+        event.preventDefault();
+        event.stopPropagation();
+        setActionMenu({
+            type: 'folder',
+            root,
+            folder,
+            key: folderMenuKey(root, folder),
+            ...menuPosition(event.currentTarget.getBoundingClientRect(), 96)
+        });
+    }
+
+    function closeActionMenu() {
+        setActionMenu(null);
+    }
+
+    function startResizePane(pane: 'sidebar' | 'detail', event: ReactPointerEvent<HTMLDivElement>) {
+        if (event.button !== 0) {
+            return;
+        }
+        event.preventDefault();
+        const startX = event.clientX;
+        const start = layoutPrefs;
+        let latest = start;
+        document.body.classList.add('resizing-layout');
+
+        const move = (moveEvent: PointerEvent) => {
+            const delta = moveEvent.clientX - startX;
+            latest = clampLayoutPrefs({
+                sidebarWidth: pane === 'sidebar' ? start.sidebarWidth + delta : start.sidebarWidth,
+                detailWidth: pane === 'detail' ? start.detailWidth - delta : start.detailWidth
+            });
+            setLayoutPrefs(latest);
+        };
+        const stop = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', stop);
+            document.body.classList.remove('resizing-layout');
+            persistLayoutPrefs(latest);
+        };
+
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', stop);
+    }
+
+    function resetPaneWidth(pane: 'sidebar' | 'detail') {
+        const next = clampLayoutPrefs({
+            sidebarWidth: pane === 'sidebar' ? DEFAULT_LAYOUT_PREFS.sidebarWidth : layoutPrefs.sidebarWidth,
+            detailWidth: pane === 'detail' ? DEFAULT_LAYOUT_PREFS.detailWidth : layoutPrefs.detailWidth
+        });
+        setLayoutPrefs(next);
+        persistLayoutPrefs(next);
     }
 
     async function removeRoot(root: LibraryRoot) {
         if (root.kind === 'system') {
-            setNotice({type: 'error', text: '系统字库不能删除'});
+            setNotice({type: 'error', text: t('notices.systemRootCannotDelete')});
             return;
         }
         if (root.scanStatus === 'running') {
-            setNotice({type: 'info', text: '字体库正在扫描，请等待扫描完成后再删除'});
+            setNotice({type: 'info', text: t('notices.rootScanningDelete')});
             return;
         }
-        if (!window.confirm(`从 Ziio 移除字体库“${root.name}”？\n\n路径：${root.path}\n\n这只会删除应用内索引记录，磁盘上的文件夹和字体文件会保留。`)) {
+        if (!window.confirm(t('confirm.removeRoot', {name: root.name, path: root.path}))) {
             return;
         }
 
@@ -313,6 +505,7 @@ function App() {
             await api.removeRoot(root.id);
             const deletingActiveRoot = selectedRoot === root.id;
             setExpandedFolderKeys(current => current.filter(item => !item.startsWith(`${root.id}:`)));
+            setCollapsedRootIds(current => current.filter(id => id !== root.id));
             if (deletingActiveRoot) {
                 setSelectedRoot(0);
                 setSelectedFolder('');
@@ -329,7 +522,7 @@ function App() {
                 deletingActiveRoot ? {rootId: 0, folderPath: '', favoritesOnly: false, installedOnly: false} : {},
                 !deletingActiveRoot
             );
-            setNotice({type: 'success', text: `已从 Ziio 移除 ${root.name}，源文件未删除`});
+            setNotice({type: 'success', text: t('notices.removedRoot', {name: root.name})});
         });
     }
 
@@ -367,7 +560,7 @@ function App() {
 
     async function install(mode: 'copy' | 'link') {
         if (activeIds.length === 0) {
-            setNotice({type: 'info', text: '请选择字体'});
+            setNotice({type: 'info', text: t('notices.chooseFont')});
             return;
         }
         setOperationProgress({
@@ -382,7 +575,7 @@ function App() {
             fileId: 0,
             fileName: '',
             status: 'start',
-            message: 'preparing install',
+            message: '',
             done: false
         });
         await runBusy(async () => {
@@ -398,10 +591,10 @@ function App() {
 
     async function uninstall() {
         if (activeIds.length === 0) {
-            setNotice({type: 'info', text: '请选择字体'});
+            setNotice({type: 'info', text: t('notices.chooseFont')});
             return;
         }
-        if (!window.confirm(`卸载 ${activeIds.length} 个字体记录？`)) {
+        if (!window.confirm(t('confirm.uninstall', {count: activeIds.length}))) {
             return;
         }
         await runBusy(async () => {
@@ -426,16 +619,31 @@ function App() {
     }
 
     function selectRoot(rootId: number) {
+        closeActionMenu();
+        if (selectedRoot === rootId) {
+            setSelectedFolder('');
+            setFavoritesOnly(false);
+            setInstalledOnly(false);
+            setCollapsedRootIds(current => current.includes(rootId) ? current.filter(id => id !== rootId) : [...current, rootId]);
+            return;
+        }
         setSelectedRoot(rootId);
         setSelectedFolder('');
         setFavoritesOnly(false);
         setInstalledOnly(false);
+        setCollapsedRootIds(current => current.filter(id => id !== rootId));
     }
 
     function selectFolder(rootId: number, path: string, hasChildren: boolean) {
+        closeActionMenu();
+        setSelectedRoot(rootId);
+        setFavoritesOnly(false);
+        setInstalledOnly(false);
+        setCollapsedRootIds(current => current.filter(id => id !== rootId));
         setSelectedFolder(path);
         if (hasChildren) {
-            expandFolder(rootId, path);
+            const key = folderKey(rootId, path);
+            setExpandedFolderKeys(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key]);
         }
     }
 
@@ -445,22 +653,128 @@ function App() {
     }
 
     function toggleFolder(rootId: number, path: string) {
+        closeActionMenu();
+        setCollapsedRootIds(current => current.filter(id => id !== rootId));
         const key = folderKey(rootId, path);
         setExpandedFolderKeys(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key]);
+    }
+
+    function openGridColumnMenu() {
+        if (viewMode === 'grid' && !gridColumnMenuSuppressedUntilLeave) {
+            setGridColumnMenuOpen(true);
+        }
+    }
+
+    function closeGridColumnMenuAfterLeave() {
+        setGridColumnMenuOpen(false);
+        setGridColumnMenuSuppressedUntilLeave(false);
+    }
+
+    function activateListView() {
+        setViewMode('list');
+        setGridColumnMenuOpen(false);
+        setGridColumnMenuSuppressedUntilLeave(false);
+    }
+
+    function activateGridView() {
+        setViewMode('grid');
+        setGridColumnMenuOpen(false);
+        setGridColumnMenuSuppressedUntilLeave(true);
+    }
+
+    function selectCardColumnCount(columns: CardColumnCount) {
+        setCardColumns(columns);
+        setGridColumnMenuOpen(false);
+        setGridColumnMenuSuppressedUntilLeave(true);
     }
 
     function applyOperationNotice(result: OperationResult) {
         const firstError = result.messages?.find(m => m.level === 'error')?.message;
         if ((result.failed ?? 0) > 0) {
-            setNotice({type: 'error', text: `${result.succeeded} 成功，${result.failed} 失败${firstError ? `：${firstError}` : ''}`});
+            setNotice({
+                type: 'error',
+                text: t('notices.operationFailed', {
+                    succeeded: result.succeeded,
+                    failed: result.failed,
+                    message: firstError ? t('notices.errorPrefix', {message: firstError}) : ''
+                })
+            });
         } else {
-            setNotice({type: 'success', text: `${result.succeeded} 项完成`});
+            setNotice({type: 'success', text: t('notices.operationCompleted', {count: result.succeeded})});
         }
     }
 
     function showError(error: unknown) {
         const text = error instanceof Error ? error.message : String(error);
         setNotice({type: 'error', text});
+    }
+
+    function renderActionMenu() {
+        if (!actionMenu) {
+            return null;
+        }
+        const scanning = actionMenu.root.scanStatus === 'running';
+        const disabled = busy || scanning;
+        const menuTitle = actionMenu.type === 'root' ? actionMenu.root.name : actionMenu.folder.name;
+        return (
+            <div
+                className="action-menu"
+                ref={actionMenuRef}
+                role="menu"
+                aria-label={t('menu.operations', {name: menuTitle})}
+                style={{left: actionMenu.left, top: actionMenu.top}}
+            >
+                <div className="action-menu-title" title={actionMenu.type === 'root' ? actionMenu.root.path : actionMenu.folder.path}>
+                    {menuTitle}
+                </div>
+                {scanning && <div className="action-menu-hint">{t('menu.scanningHint')}</div>}
+                {actionMenu.type === 'root' ? (
+                    <>
+                        <button
+                            role="menuitem"
+                            disabled={disabled}
+                            onClick={() => {
+                                const root = actionMenu.root;
+                                closeActionMenu();
+                                rescanRoot(root);
+                            }}
+                        >
+                            <RefreshCw size={14}/>
+                            <span>{t('actions.syncLibrary')}</span>
+                        </button>
+                        {actionMenu.root.kind !== 'system' && (
+                            <button
+                                role="menuitem"
+                                className="danger"
+                                disabled={disabled}
+                                onClick={() => {
+                                    const root = actionMenu.root;
+                                    closeActionMenu();
+                                    removeRoot(root);
+                                }}
+                            >
+                                <Trash2 size={14}/>
+                                <span>{t('actions.removeLibrary')}</span>
+                            </button>
+                        )}
+                    </>
+                ) : (
+                    <button
+                        role="menuitem"
+                        disabled={disabled}
+                        onClick={() => {
+                            const root = actionMenu.root;
+                            const folder = actionMenu.folder;
+                            closeActionMenu();
+                            rescanFolder(root, folder);
+                        }}
+                    >
+                        <RefreshCw size={14}/>
+                        <span>{t('actions.syncFolder')}</span>
+                    </button>
+                )}
+            </div>
+        );
     }
 
     function toggleChecked(faceId: number) {
@@ -706,25 +1020,47 @@ function App() {
         }
     }
 
+    const shellStyle = {
+        '--sidebar-width': `${layoutPrefs.sidebarWidth}px`,
+        '--detail-width': `${layoutPrefs.detailWidth}px`
+    } as CSSProperties;
+    const currentLanguage: SupportedLanguage = i18n.language === 'en' ? 'en' : 'zh-CN';
+    const effectiveAppInfo = appInfo ?? {
+        name: t('app.name'),
+        version: '0.2.0',
+        dataDir: '',
+        cacheDir: '',
+        logDir: '',
+        databasePath: ''
+    };
+
     return (
-        <div className="app-shell">
+        <div className="app-shell" style={shellStyle}>
             <aside className="sidebar">
                 <div className="brand">
-                    <div className="brand-mark">Z</div>
-                    <div>
-                        <div className="brand-title">Ziio Font Manager</div>
-                        <div className="brand-subtitle">本地字体库管理</div>
-                    </div>
+                    <div className="brand-subtitle">{t('app.subtitle')}</div>
+                    <button className="settings-trigger" type="button" title={t('settings.open')} aria-label={t('settings.open')} onClick={() => {
+                        closeActionMenu();
+                        setSettingsOpen(true);
+                    }}>
+                        <Settings size={17}/>
+                    </button>
                 </div>
 
                 <button className="primary-action" onClick={addRoot} disabled={busy}>
                     <FolderPlus size={18}/>
-                    <span>添加字体库</span>
+                    <span>{t('actions.addLibrary')}</span>
                 </button>
-                <button className="secondary-action" onClick={scanSystemFonts} disabled={busy}>
-                    <Server size={17}/>
-                    <span>扫描系统字库</span>
-                </button>
+                <div className="sidebar-action-row">
+                    <button className="secondary-action" onClick={scanSystemFonts} disabled={busy}>
+                        <Server size={16}/>
+                        <span>{t('actions.scanSystemFonts')}</span>
+                    </button>
+                    <button className="secondary-action" onClick={rescanAllRoots} disabled={busy || roots.length === 0}>
+                        <RefreshCw size={16}/>
+                        <span>{t('actions.rescanAll')}</span>
+                    </button>
+                </div>
 
                 <nav className="nav-list">
                     <button className={selectedRoot === 0 && !favoritesOnly && !installedOnly ? 'active' : ''} onClick={() => {
@@ -734,7 +1070,7 @@ function App() {
                         setInstalledOnly(false);
                     }}>
                         <Columns3 size={17}/>
-                        <span>全部已索引字体</span>
+                        <span>{t('nav.allIndexed')}</span>
                         <b>{fonts.length}</b>
                     </button>
                     <button className={favoritesOnly ? 'active' : ''} onClick={() => {
@@ -742,19 +1078,19 @@ function App() {
                         setInstalledOnly(false);
                     }}>
                         <Star size={17}/>
-                        <span>收藏</span>
+                        <span>{t('nav.favorites')}</span>
                     </button>
                     <button className={installedOnly ? 'active' : ''} onClick={() => {
                         setInstalledOnly(true);
                         setFavoritesOnly(false);
                     }}>
                         <HardDriveDownload size={17}/>
-                        <span>已安装</span>
+                        <span>{t('nav.installed')}</span>
                     </button>
                 </nav>
 
                 <RootSection
-                    title="用户字体库"
+                    title={t('nav.userLibraries')}
                     roots={userRoots}
                     busy={busy}
                     selectedRoot={selectedRoot}
@@ -764,10 +1100,14 @@ function App() {
                     onSelectRoot={selectRoot}
                     onSelectFolder={selectFolder}
                     onToggleFolder={toggleFolder}
-                    onRemoveRoot={removeRoot}
+                    onOpenRootMenu={openRootActionMenu}
+                    onOpenFolderMenu={openFolderActionMenu}
+                    openActionMenuKey={actionMenu?.key ?? ''}
+                    collapsedRootIds={collapsedRootIds}
+                    t={t}
                 />
                 <RootSection
-                    title="系统字库"
+                    title={t('nav.systemLibraries')}
                     roots={systemRoots}
                     busy={busy}
                     selectedRoot={selectedRoot}
@@ -777,41 +1117,73 @@ function App() {
                     onSelectRoot={selectRoot}
                     onSelectFolder={selectFolder}
                     onToggleFolder={toggleFolder}
+                    onOpenRootMenu={openRootActionMenu}
+                    onOpenFolderMenu={openFolderActionMenu}
+                    openActionMenuKey={actionMenu?.key ?? ''}
+                    collapsedRootIds={collapsedRootIds}
+                    t={t}
                 />
             </aside>
+
+            <div
+                className="resize-handle resize-handle-sidebar"
+                role="separator"
+                aria-label={t('accessibility.resizeSidebar')}
+                aria-orientation="vertical"
+                onPointerDown={(event) => startResizePane('sidebar', event)}
+                onDoubleClick={() => resetPaneWidth('sidebar')}
+            />
 
             <main className="workspace">
                 <header className="toolbar">
                     <div className="search-box">
                         <Search size={18}/>
-                        <input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索 family、样式、文件名" />
+                        <input value={query} onChange={event => setQuery(event.target.value)} placeholder={t('toolbar.searchPlaceholder')} />
                     </div>
-                    <button className="icon-button" onClick={rescanRoot} disabled={busy} title="重新扫描">
-                        <RefreshCw size={18}/>
-                    </button>
-                    <div className="segmented">
-                        <button className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')} title="列表"><List size={17}/></button>
-                        <button className={viewMode === 'grid' ? 'active' : ''} onClick={() => setViewMode('grid')} title="网格"><Grid3X3 size={17}/></button>
-                    </div>
-                    {viewMode === 'grid' && (
-                        <div className="segmented column-segmented" aria-label="卡片列数">
-                            {CARD_COLUMN_OPTIONS.map(columns => (
-                                <button
-                                    key={columns}
-                                    className={cardColumns === columns ? 'active' : ''}
-                                    onClick={() => setCardColumns(columns)}
-                                    title={`${columns}列`}
-                                >
-                                    {columns}
-                                </button>
-                            ))}
+                    <div className="segmented view-segmented">
+                        <button className={viewMode === 'list' ? 'active' : ''} onClick={activateListView} title={t('toolbar.list')}><List size={17}/></button>
+                        <div
+                            className={gridColumnMenuOpen ? 'grid-column-picker menu-open' : 'grid-column-picker'}
+                            onPointerEnter={openGridColumnMenu}
+                            onPointerLeave={closeGridColumnMenuAfterLeave}
+                            onFocus={openGridColumnMenu}
+                            onBlur={(event) => {
+                                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                                    closeGridColumnMenuAfterLeave();
+                                }
+                            }}
+                        >
+                            <button
+                                className={viewMode === 'grid' ? 'active' : ''}
+                                onClick={activateGridView}
+                                title={t('toolbar.grid')}
+                                aria-haspopup="menu"
+                                aria-expanded={gridColumnMenuOpen}
+                            >
+                                <Grid3X3 size={17}/>
+                            </button>
+                            {viewMode === 'grid' && gridColumnMenuOpen && (
+                                <div className="grid-column-menu" role="menu" aria-label={t('toolbar.gridColumns')}>
+                                    {CARD_COLUMN_OPTIONS.map(columns => (
+                                        <button
+                                            key={columns}
+                                            role="menuitem"
+                                            className={cardColumns === columns ? 'active' : ''}
+                                            onClick={() => selectCardColumnCount(columns)}
+                                            title={t('toolbar.columns', {count: columns})}
+                                        >
+                                            {t('toolbar.columns', {count: columns})}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </header>
 
                 <div className="preview-controls">
                     <div className="scope-title">
-                        <strong>{activeRoot?.name ?? (favoritesOnly ? '收藏' : installedOnly ? '已安装' : '全部字体')}</strong>
+                        <strong>{activeRoot?.name ?? (favoritesOnly ? t('nav.favorites') : installedOnly ? t('nav.installed') : t('nav.allFonts'))}</strong>
                         {selectedFolder && <span>{selectedFolder}</span>}
                     </div>
                     <input value={sampleText} onChange={event => setSampleText(event.target.value)} />
@@ -823,7 +1195,7 @@ function App() {
 
                 {activeRoot?.scanStatus === 'running' && (
                     <div className="scan-strip">
-                        <span>正在后台扫描：{activeRoot.scanProcessed}/{activeRoot.scanTotal || '?'}</span>
+                        <span>{t('status.backgroundScanning', {processed: activeRoot.scanProcessed, total: activeRoot.scanTotal || '?'})}</span>
                         <div><i style={{width: `${scanPercent(activeRoot)}%`}} /></div>
                     </div>
                 )}
@@ -832,7 +1204,7 @@ function App() {
                     <div className={`notice ${notice.type}`}>
                         {notice.type === 'error' ? <AlertTriangle size={17}/> : notice.type === 'success' ? <CheckCircle2 size={17}/> : <Info size={17}/>}
                         <span>{notice.text}</span>
-                        <button onClick={() => setNotice(null)}><X size={15}/></button>
+                        <button onClick={() => setNotice(null)} aria-label={t('accessibility.closeNotice')}><X size={15}/></button>
                     </div>
                 )}
 
@@ -855,27 +1227,37 @@ function App() {
                             onSelect={() => setSelectedFace(font.faceId)}
                             onCheck={() => toggleChecked(font.faceId)}
                             onFavorite={() => toggleFavorite(font)}
+                            t={t}
                         />
                     ))}
                     {fonts.length === 0 && (
                         <div className="empty-state">
                             <FolderOpen size={36}/>
-                            <strong>没有字体结果</strong>
-                            <span>{anyScanning ? '后台扫描中，索引到字体后会逐步显示。' : '当前筛选条件下没有可显示的字体。'}</span>
+                            <strong>{t('empty.noFontsTitle')}</strong>
+                            <span>{anyScanning ? t('empty.scanning') : t('empty.noResults')}</span>
                         </div>
                     )}
                     {hasMore && (
                         <div className="load-more-indicator">
-                            {loadingMore ? '加载中...' : '继续向下滚动加载更多'}
+                            {loadingMore ? t('empty.loadingMore') : t('empty.loadMore')}
                         </div>
                     )}
                 </section>
             </main>
 
+            <div
+                className="resize-handle resize-handle-detail"
+                role="separator"
+                aria-label={t('accessibility.resizeDetail')}
+                aria-orientation="vertical"
+                onPointerDown={(event) => startResizePane('detail', event)}
+                onDoubleClick={() => resetPaneWidth('detail')}
+            />
+
             <aside className="detail-panel">
                 <div className="detail-header">
-                    <span>属性</span>
-                    <b>{activeIds.length > 0 ? `${activeIds.length} 选中` : ''}</b>
+                    <span>{t('detail.title')}</span>
+                    <b>{activeIds.length > 0 ? t('status.selected', {count: activeIds.length}) : ''}</b>
                 </div>
                 {detail ? (
                     <>
@@ -887,58 +1269,115 @@ function App() {
                             <span>{detail.format}</span>
                             <span>{detail.style}</span>
                             <span>{detail.weight}</span>
-                            {detail.isInstalled && <span className="installed">已安装</span>}
+                            {detail.isInstalled && <span className="installed">{t('status.installed')}</span>}
                         </div>
                         <div className="scope-toggle">
-                            <button className={installScope === 'user' ? 'active' : ''} onClick={() => setInstallScope('user')}>当前用户</button>
-                            <button className={installScope === 'machine' ? 'active' : ''} onClick={() => setInstallScope('machine')}>所有用户</button>
+                            <button className={installScope === 'user' ? 'active' : ''} onClick={() => setInstallScope('user')}>{t('detail.currentUser')}</button>
+                            <button className={installScope === 'machine' ? 'active' : ''} onClick={() => setInstallScope('machine')}>{t('detail.allUsers')}</button>
                         </div>
                         <div className="action-grid">
-                            <button onClick={() => install('copy')} disabled={busy}><Download size={17}/>普通安装</button>
-                            <button onClick={() => install('link')} disabled={busy}><Link2 size={17}/>快捷安装</button>
-                            <button onClick={uninstall} disabled={busy}><Trash2 size={17}/>卸载</button>
-                            <button onClick={() => api.revealInExplorer(detail.faceId).catch(showError)}><ExternalLink size={17}/>位置</button>
+                            <button onClick={() => install('copy')} disabled={busy}><Download size={17}/>{t('actions.normalInstall')}</button>
+                            <button onClick={() => install('link')} disabled={busy}><Link2 size={17}/>{t('actions.quickInstall')}</button>
+                            <button onClick={uninstall} disabled={busy}><Trash2 size={17}/>{t('actions.uninstall')}</button>
+                            <button onClick={() => api.revealInExplorer(detail.faceId).catch(showError)}><ExternalLink size={17}/>{t('actions.reveal')}</button>
                         </div>
                         <dl className="metadata">
-                            <dt>Family</dt><dd>{detail.family}</dd>
-                            <dt>PostScript</dt><dd>{detail.postScriptName || '-'}</dd>
-                            <dt>文件</dt><dd title={detail.path}>{detail.fileName}</dd>
-                            <dt>大小</dt><dd>{formatBytes(detail.size)}</dd>
-                            <dt>字形</dt><dd>{detail.glyphCount || '-'}</dd>
-                            <dt>版本</dt><dd>{detail.version || '-'}</dd>
-                            <dt>厂商</dt><dd>{detail.manufacturer || '-'}</dd>
-                            <dt>状态</dt><dd>{detail.error || detail.status}</dd>
+                            <dt>{t('detail.family')}</dt><dd>{detail.family}</dd>
+                            <dt>{t('detail.postScript')}</dt><dd>{detail.postScriptName || '-'}</dd>
+                            <dt>{t('detail.file')}</dt><dd title={detail.path}>{detail.fileName}</dd>
+                            <dt>{t('detail.size')}</dt><dd>{formatBytes(detail.size, t)}</dd>
+                            <dt>{t('detail.glyphs')}</dt><dd>{detail.glyphCount || '-'}</dd>
+                            <dt>{t('detail.version')}</dt><dd>{detail.version || '-'}</dd>
+                            <dt>{t('detail.manufacturer')}</dt><dd>{detail.manufacturer || '-'}</dd>
+                            <dt>{t('detail.status')}</dt><dd>{detail.error || detail.status}</dd>
                         </dl>
                         <div className="records">
-                            <div className="records-title">安装记录</div>
+                            <div className="records-title">{t('detail.installRecords')}</div>
                             {detail.installRecords?.slice(0, 5).map(record => (
                                 <div className="record" key={record.id}>
                                     <span>{record.mode}/{record.scope}</span>
                                     <b>{record.status}</b>
                                 </div>
                             ))}
-                            {(!detail.installRecords || detail.installRecords.length === 0) && <span className="muted">无记录</span>}
+                            {(!detail.installRecords || detail.installRecords.length === 0) && <span className="muted">{t('detail.noRecords')}</span>}
                         </div>
                     </>
                 ) : (
                     <div className="empty-detail">
                         <Info size={30}/>
-                        <span>未选择字体</span>
+                        <span>{t('empty.noSelection')}</span>
                     </div>
                 )}
             </aside>
-            {operationProgress && <OperationProgressModal progress={operationProgress}/>}
+            {renderActionMenu()}
+            {settingsOpen && (
+                <SettingsDialog
+                    appInfo={effectiveAppInfo}
+                    language={currentLanguage}
+                    onLanguageChange={changeLanguage}
+                    onClose={() => setSettingsOpen(false)}
+                    t={t}
+                />
+            )}
+            {operationProgress && <OperationProgressModal progress={operationProgress} t={t}/>}
         </div>
     )
 }
 
-function OperationProgressModal(props: {progress: OperationProgress}) {
-    const {progress} = props;
+function SettingsDialog(props: {
+    appInfo: AppInfo;
+    language: SupportedLanguage;
+    onLanguageChange: (language: SupportedLanguage) => void;
+    onClose: () => void;
+    t: TFunction;
+}) {
+    const {appInfo, language, onLanguageChange, onClose, t} = props;
+
+    useEffect(() => {
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', closeOnEscape);
+        return () => window.removeEventListener('keydown', closeOnEscape);
+    }, [onClose]);
+
+    return (
+        <div className="settings-backdrop" role="presentation" onPointerDown={onClose}>
+            <div className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onPointerDown={event => event.stopPropagation()}>
+                <button className="settings-close" type="button" onClick={onClose} aria-label={t('settings.close')} title={t('settings.close')}>
+                    <X size={17}/>
+                </button>
+                <div className="settings-brand">
+                    <img src={brandLogo} alt="" />
+                    <div>
+                        <h2 id="settings-title">{appInfo.name || t('app.name')}</h2>
+                        <span>{t('settings.version')} {appInfo.version || '0.2.0'}</span>
+                    </div>
+                </div>
+                <label className="settings-field">
+                    <span>{t('settings.language')}</span>
+                    <select value={language} onChange={event => onLanguageChange(event.target.value as SupportedLanguage)}>
+                        {SUPPORTED_LANGUAGES.map(item => (
+                            <option key={item} value={item}>
+                                {item === 'zh-CN' ? t('settings.chinese') : t('settings.english')}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+            </div>
+        </div>
+    );
+}
+
+function OperationProgressModal(props: {progress: OperationProgress; t: TFunction}) {
+    const {progress, t} = props;
     const total = Math.max(progress.total || 0, 0);
     const current = Math.min(progress.current || 0, total || progress.current || 0);
     const percent = total > 0 ? Math.max(4, Math.min(100, Math.round(current / total * 100))) : 12;
-    const title = progress.operation === 'install' ? '正在安装字体' : '正在处理字体';
-    const status = progress.done ? '处理完成' : progress.status === 'error' ? '部分失败' : '处理中';
+    const title = progress.operation === 'install' ? t('operation.installing') : t('operation.processingFonts');
+    const status = progress.done ? t('operation.done') : progress.status === 'error' ? t('operation.partialFailed') : t('operation.processing');
 
     return (
         <div className="operation-backdrop" role="dialog" aria-modal="true" aria-label={title}>
@@ -952,11 +1391,11 @@ function OperationProgressModal(props: {progress: OperationProgress}) {
                 </div>
                 <div className="operation-stats">
                     <span>{current}/{total || '?'}</span>
-                    <span>成功 {progress.succeeded}</span>
-                    <span>失败 {progress.failed}</span>
+                    <span>{t('operation.success', {count: progress.succeeded})}</span>
+                    <span>{t('operation.failed', {count: progress.failed})}</span>
                 </div>
                 <div className="operation-file" title={progress.fileName || progress.message}>
-                    {progress.fileName || progress.message || '准备中...'}
+                    {progress.fileName || progress.message || t('operation.preparing')}
                 </div>
             </div>
         </div>
@@ -974,7 +1413,11 @@ function RootSection(props: {
     onSelectRoot: (id: number) => void;
     onSelectFolder: (rootId: number, path: string, hasChildren: boolean) => void;
     onToggleFolder: (rootId: number, path: string) => void;
-    onRemoveRoot?: (root: LibraryRoot) => void;
+    onOpenRootMenu: (root: LibraryRoot, event: ReactMouseEvent<HTMLButtonElement>) => void;
+    onOpenFolderMenu: (root: LibraryRoot, folder: FontFolder, event: ReactMouseEvent<HTMLButtonElement>) => void;
+    openActionMenuKey: string;
+    collapsedRootIds: number[];
+    t: TFunction;
 }) {
     if (props.roots.length === 0) {
         return null;
@@ -985,37 +1428,44 @@ function RootSection(props: {
             <div className="root-list">
                 {props.roots.map(root => {
                     const selected = props.selectedRoot === root.id;
-                    const visibleFolders = selected ? visibleFolderRows(root.id, props.folders, props.expandedFolderKeys) : [];
+                    const rootCollapsed = props.collapsedRootIds.includes(root.id);
+                    const visibleFolders = selected && !rootCollapsed ? visibleFolderRows(root.id, props.folders, props.expandedFolderKeys) : [];
+                    const scanning = root.scanStatus === 'running';
+                    const rootKey = rootMenuKey(root);
                     return (
                         <div className="root-group" key={root.id}>
-                            <div className={props.onRemoveRoot ? 'root-row removable' : 'root-row'}>
-                                <button className={selected && props.selectedFolder === '' ? 'root-main active' : 'root-main'} onClick={() => props.onSelectRoot(root.id)}>
+                            <div className={props.openActionMenuKey === rootKey ? 'root-row menu-open' : 'root-row'}>
+                                <button
+                                    className={selected && props.selectedFolder === '' ? 'root-main active' : 'root-main'}
+                                    disabled={scanning}
+                                    title={scanning ? props.t('status.scanning') : root.path}
+                                    onClick={() => props.onSelectRoot(root.id)}
+                                >
                                     {root.kind === 'system' ? <Server size={16}/> : <FolderOpen size={16}/>}
                                     <span>{root.name}</span>
                                     <b>{root.scanStatus === 'running' ? `${root.scanProcessed}/${root.scanTotal || '?'}` : root.fontCount}</b>
                                 </button>
-                                {props.onRemoveRoot && (
-                                    <button
-                                        className="root-remove"
-                                        disabled={props.busy || root.scanStatus === 'running'}
-                                        title={root.scanStatus === 'running' ? '扫描中暂不能删除' : `从 Ziio 移除 ${root.name}`}
-                                        aria-label={`删除字体库 ${root.name}`}
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            props.onRemoveRoot?.(root);
-                                        }}
-                                    >
-                                        <Trash2 size={14}/>
-                                    </button>
-                                )}
+                                <button
+                                    className="row-menu-trigger"
+                                    title={props.t('menu.operations', {name: root.name})}
+                                    aria-label={props.t('menu.operations', {name: root.name})}
+                                    aria-haspopup="menu"
+                                    aria-expanded={props.openActionMenuKey === rootKey}
+                                    onClick={(event) => props.onOpenRootMenu(root, event)}
+                                >
+                                    <MoreHorizontal size={15}/>
+                                </button>
                             </div>
                             {selected && visibleFolders.length > 0 && (
                                 <div className="folder-children">
-                                    {visibleFolders.map(row => (
-                                        <div className="folder-row" key={row.folder.path}>
+                                    {visibleFolders.map(row => {
+                                        const folderKeyValue = folderMenuKey(root, row.folder);
+                                        return (
+                                        <div className={props.openActionMenuKey === folderKeyValue ? 'folder-row menu-open' : 'folder-row'} key={row.folder.path}>
                                             <button
                                                 className="folder-toggle"
-                                                aria-label={row.expanded ? '收起文件夹' : '展开文件夹'}
+                                                disabled={scanning}
+                                                aria-label={row.expanded ? props.t('folder.collapse') : props.t('folder.expand')}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
                                                     if (row.hasChildren) {
@@ -1027,15 +1477,28 @@ function RootSection(props: {
                                             </button>
                                             <button
                                                 className={props.selectedFolder === row.folder.path ? 'folder-item active' : 'folder-item'}
-                                                style={{paddingLeft: 8 + row.folder.depth * 12}}
+                                                style={{paddingLeft: 4 + row.folder.depth * 8}}
+                                                disabled={scanning}
+                                                title={scanning ? props.t('status.scanning') : row.folder.path}
                                                 onClick={() => props.onSelectFolder(root.id, row.folder.path, row.hasChildren)}
                                             >
                                                 <FolderOpen size={14}/>
                                                 <span>{row.folder.name}</span>
                                                 <b>{row.folder.fontCount}</b>
                                             </button>
+                                            <button
+                                                className="row-menu-trigger"
+                                                title={props.t('menu.operations', {name: row.folder.path})}
+                                                aria-label={props.t('menu.operations', {name: row.folder.path})}
+                                                aria-haspopup="menu"
+                                                aria-expanded={props.openActionMenuKey === folderKeyValue}
+                                                onClick={(event) => props.onOpenFolderMenu(root, row.folder, event)}
+                                            >
+                                                <MoreHorizontal size={14}/>
+                                            </button>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -1092,6 +1555,14 @@ function folderKey(rootId: number, path: string) {
     return `${rootId}:${path}`;
 }
 
+function rootMenuKey(root: LibraryRoot) {
+    return `root:${root.id}`;
+}
+
+function folderMenuKey(root: LibraryRoot, folder: FontFolder) {
+    return `folder:${root.id}:${folder.path}`;
+}
+
 function loadExpandedFolderKeys() {
     try {
         const raw = window.localStorage.getItem(EXPANDED_FOLDERS_KEY);
@@ -1100,6 +1571,47 @@ function loadExpandedFolderKeys() {
     } catch {
         return [];
     }
+}
+
+function loadLayoutPrefs(): LayoutPrefs {
+    try {
+        const raw = window.localStorage.getItem(LAYOUT_PREFS_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return clampLayoutPrefs({
+            sidebarWidth: Number(parsed?.sidebarWidth) || DEFAULT_LAYOUT_PREFS.sidebarWidth,
+            detailWidth: Number(parsed?.detailWidth) || DEFAULT_LAYOUT_PREFS.detailWidth
+        });
+    } catch {
+        return DEFAULT_LAYOUT_PREFS;
+    }
+}
+
+function persistLayoutPrefs(prefs: LayoutPrefs) {
+    try {
+        window.localStorage.setItem(LAYOUT_PREFS_KEY, JSON.stringify(clampLayoutPrefs(prefs)));
+    } catch {
+        // localStorage can be unavailable in restricted WebView contexts.
+    }
+}
+
+function clampLayoutPrefs(prefs: LayoutPrefs): LayoutPrefs {
+    const viewportWidth = typeof window === 'undefined' ? 1280 : window.innerWidth;
+    const maxSidebarByViewport = viewportWidth - prefs.detailWidth - MIDDLE_MIN - RESIZE_HANDLE_TOTAL;
+    const sidebarWidth = clamp(prefs.sidebarWidth, SIDEBAR_MIN, Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, maxSidebarByViewport)));
+    const maxDetailByViewport = viewportWidth - sidebarWidth - MIDDLE_MIN - RESIZE_HANDLE_TOTAL;
+    const detailWidth = clamp(prefs.detailWidth, DETAIL_MIN, Math.max(DETAIL_MIN, Math.min(DETAIL_MAX, maxDetailByViewport)));
+    return {sidebarWidth, detailWidth};
+}
+
+function clamp(value: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function menuPosition(rect: DOMRect, estimatedHeight: number) {
+    const width = 188;
+    const left = clamp(rect.right - width, 8, window.innerWidth - width - 8);
+    const top = clamp(rect.bottom + 4, 8, window.innerHeight - estimatedHeight - 8);
+    return {left, top};
 }
 
 const FontCard = memo(function FontCard(props: {
@@ -1113,8 +1625,9 @@ const FontCard = memo(function FontCard(props: {
     onSelect: () => void;
     onCheck: () => void;
     onFavorite: () => void;
+    t: TFunction;
 }) {
-    const {font, preview, previewLoading, selected, checked, sampleText, fontSize, onSelect, onCheck, onFavorite} = props;
+    const {font, preview, previewLoading, selected, checked, sampleText, fontSize, onSelect, onCheck, onFavorite, t} = props;
     const fontFamily = preview?.previewSupported ? preview.fontFamily : undefined;
     const text = sampleText || preview?.sampleText || font.fullName;
 
@@ -1135,7 +1648,7 @@ const FontCard = memo(function FontCard(props: {
                 <button className={font.isFavorite ? 'star active' : 'star'} onClick={event => {
                     event.stopPropagation();
                     onFavorite();
-                }} title="收藏">
+                }} title={t('accessibility.favorite')} aria-label={t('accessibility.favorite')}>
                     <Star size={16}/>
                 </button>
             </div>
@@ -1148,8 +1661,8 @@ const FontCard = memo(function FontCard(props: {
             <div className="card-meta">
                 <span>{font.style}</span>
                 <span>{font.format}</span>
-                {font.isInstalled && <span className="pill">已安装</span>}
-                {font.status !== 'ok' && <span className="warning">受限</span>}
+                {font.isInstalled && <span className="pill">{t('status.installed')}</span>}
+                {font.status !== 'ok' && <span className="warning">{t('status.limited')}</span>}
             </div>
         </article>
     );
@@ -1162,17 +1675,17 @@ function scanPercent(root: LibraryRoot) {
     return Math.max(3, Math.min(100, Math.round(root.scanProcessed / root.scanTotal * 100)));
 }
 
-function formatBytes(value: number) {
+function formatBytes(value: number, t: TFunction) {
     if (!value) {
         return '-';
     }
     if (value < 1024) {
-        return `${value} B`;
+        return t('units.bytes', {value});
     }
     if (value < 1024 * 1024) {
-        return `${(value / 1024).toFixed(1)} KB`;
+        return t('units.kilobytes', {value: (value / 1024).toFixed(1)});
     }
-    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+    return t('units.megabytes', {value: (value / 1024 / 1024).toFixed(1)});
 }
 
 export default App

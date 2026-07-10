@@ -26,6 +26,14 @@ export function RemoveRoot(arg1) {
   return window['go']['library']['LibraryService']['RemoveRoot'](arg1);
 }
 
+export function RescanAllRoots() {
+  return window['go']['library']['LibraryService']['RescanAllRoots']();
+}
+
+export function RescanFolder(arg1, arg2) {
+  return window['go']['library']['LibraryService']['RescanFolder'](arg1, arg2);
+}
+
 export function RescanRoot(arg1) {
   return window['go']['library']['LibraryService']['RescanRoot'](arg1);
 }

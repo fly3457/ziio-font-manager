@@ -67,7 +67,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) GetAppInfo() models.AppInfo {
 	return models.AppInfo{
 		Name:         "Ziio Font Manager",
-		Version:      "0.1.0",
+		Version:      "0.2.0",
 		DataDir:      a.Dirs.DataDir,
 		CacheDir:     a.Dirs.CacheDir,
 		LogDir:       a.Dirs.LogDir,

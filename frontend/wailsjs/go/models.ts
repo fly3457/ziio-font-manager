@@ -378,6 +378,10 @@ export namespace models {
 	    added: number;
 	    updated: number;
 	    failed: number;
+	    missing: number;
+	    unchanged: number;
+	    scope: string;
+	    scopePath: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ScanResult(source);
@@ -391,6 +395,10 @@ export namespace models {
 	        this.added = source["added"];
 	        this.updated = source["updated"];
 	        this.failed = source["failed"];
+	        this.missing = source["missing"];
+	        this.unchanged = source["unchanged"];
+	        this.scope = source["scope"];
+	        this.scopePath = source["scopePath"];
 	    }
 	}
 	export class ScanStatus {
@@ -401,6 +409,10 @@ export namespace models {
 	    added: number;
 	    updated: number;
 	    failed: number;
+	    missing: number;
+	    unchanged: number;
+	    scope: string;
+	    scopePath: string;
 	    message: string;
 	    startedAt: string;
 	    finishedAt: string;
@@ -418,6 +430,10 @@ export namespace models {
 	        this.added = source["added"];
 	        this.updated = source["updated"];
 	        this.failed = source["failed"];
+	        this.missing = source["missing"];
+	        this.unchanged = source["unchanged"];
+	        this.scope = source["scope"];
+	        this.scopePath = source["scopePath"];
 	        this.message = source["message"];
 	        this.startedAt = source["startedAt"];
 	        this.finishedAt = source["finishedAt"];

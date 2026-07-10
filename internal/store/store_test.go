@@ -147,6 +147,59 @@ func TestStoreFolderListingAndFolderQuery(t *testing.T) {
 	}
 }
 
+func TestStoreMarkMissingFilesInScopeOnlyMarksSubtree(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	rootDir := t.TempDir()
+	root, err := db.AddRoot(rootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keepPath := filepath.Join(root.Path, "Serif", "Keep.ttf")
+	missingPath := filepath.Join(root.Path, "Serif", "Gone.ttf")
+	outsidePath := filepath.Join(root.Path, "Sans", "Outside.ttf")
+	for _, item := range []struct {
+		path   string
+		family string
+	}{
+		{keepPath, "Keep"},
+		{missingPath, "Gone"},
+		{outsidePath, "Outside"},
+	} {
+		upsertTestFont(t, db, root.ID, item.path, item.family)
+	}
+
+	missing, err := db.MarkMissingFilesInScope(root.ID, filepath.Join(root.Path, "Serif"), map[string]struct{}{
+		keepPath: {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing != 1 {
+		t.Fatalf("missing = %d, want 1", missing)
+	}
+
+	items, err := db.QueryFonts(models.FontQuery{RootID: root.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	families := map[string]bool{}
+	for _, item := range items {
+		families[item.Family] = true
+	}
+	if !families["Keep"] || !families["Outside"] {
+		t.Fatalf("expected Keep and Outside to remain visible, got %#v", families)
+	}
+	if families["Gone"] {
+		t.Fatalf("Gone should have been marked missing: %#v", families)
+	}
+}
+
 func TestStoreRemoveRootDeletesIndexedFonts(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -210,6 +263,32 @@ func TestStoreRemoveRootDeletesIndexedFonts(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("items after remove = %d, want 0: %#v", len(items), items)
+	}
+}
+
+func upsertTestFont(t *testing.T, db *Store, rootID int64, path, family string) {
+	t.Helper()
+	_, _, err := db.UpsertFontFile(FileUpsert{
+		RootID:           rootID,
+		Path:             path,
+		FileName:         filepath.Base(path),
+		Format:           "TTF",
+		Size:             123,
+		ModifiedAt:       "2026-06-24T00:00:00+08:00",
+		Hash:             "hash-" + family,
+		Status:           "ok",
+		PreviewSupported: true,
+	}, []models.FontFace{{
+		FaceIndex:        0,
+		Family:           family,
+		Style:            "Regular",
+		FullName:         family + " Regular",
+		Weight:           400,
+		PreviewSupported: true,
+		Status:           "ok",
+	}})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

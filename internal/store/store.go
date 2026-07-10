@@ -151,6 +151,10 @@ func (s *Store) migrate() error {
 			added INTEGER NOT NULL DEFAULT 0,
 			updated INTEGER NOT NULL DEFAULT 0,
 			failed INTEGER NOT NULL DEFAULT 0,
+			missing INTEGER NOT NULL DEFAULT 0,
+			unchanged INTEGER NOT NULL DEFAULT 0,
+			scope TEXT NOT NULL DEFAULT 'root',
+			scope_path TEXT NOT NULL DEFAULT '',
 			message TEXT NOT NULL DEFAULT '',
 			started_at TEXT NOT NULL,
 			finished_at TEXT NOT NULL DEFAULT ''
@@ -170,6 +174,18 @@ func (s *Store) migrate() error {
 		}
 	}
 	if err := s.ensureColumn("library_roots", "kind", "TEXT NOT NULL DEFAULT 'user'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("scan_jobs", "missing", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("scan_jobs", "unchanged", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("scan_jobs", "scope", "TEXT NOT NULL DEFAULT 'root'"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("scan_jobs", "scope_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	return nil
@@ -287,6 +303,14 @@ func pathContains(parent, child string) bool {
 		return false
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func pathKey(path string) string {
+	path = filepath.Clean(path)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(path)
+	}
+	return path
 }
 
 func (s *Store) RootByPath(path string) (models.LibraryRoot, error) {
@@ -451,51 +475,71 @@ func (s *Store) ListFolders(rootID int64) ([]models.FontFolder, error) {
 	return folders, nil
 }
 
-func (s *Store) FileIsCurrent(path string, size int64, modifiedAt string) (bool, error) {
+func (s *Store) FileIsCurrent(rootID int64, path string, size int64, modifiedAt string) (bool, error) {
+	var currentRootID int64
 	var currentSize int64
 	var currentModifiedAt string
 	var status string
-	err := s.db.QueryRow(`SELECT size, modified_at, status FROM font_files WHERE path = ?`, path).Scan(&currentSize, &currentModifiedAt, &status)
+	err := s.db.QueryRow(`SELECT root_id, size, modified_at, status FROM font_files WHERE path = ?`, path).Scan(&currentRootID, &currentSize, &currentModifiedAt, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
+	if currentRootID != rootID {
+		return false, nil
+	}
 	return status != "missing" && currentSize == size && currentModifiedAt == modifiedAt, nil
 }
 
-func (s *Store) BeginScan(rootID int64) (int64, error) {
-	res, err := s.db.Exec(`INSERT INTO scan_jobs(root_id, status, started_at) VALUES(?, 'running', ?)`, rootID, now())
+func (s *Store) BeginScan(rootID int64, scopeArgs ...string) (int64, error) {
+	scope := "root"
+	scopePath := ""
+	if len(scopeArgs) > 0 && strings.TrimSpace(scopeArgs[0]) != "" {
+		scope = strings.TrimSpace(scopeArgs[0])
+	}
+	if len(scopeArgs) > 1 {
+		scopePath = strings.TrimSpace(scopeArgs[1])
+	}
+	res, err := s.db.Exec(`INSERT INTO scan_jobs(root_id, status, scope, scope_path, started_at) VALUES(?, 'running', ?, ?, ?)`, rootID, scope, scopePath, now())
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-func (s *Store) UpdateScan(jobID int64, status string, total, processed, added, updated, failed int, message string) error {
+func (s *Store) UpdateScan(jobID int64, status string, total, processed, added, updated, failed int, message string, extraCounts ...int) error {
+	missing := 0
+	unchanged := 0
+	if len(extraCounts) > 0 {
+		missing = extraCounts[0]
+	}
+	if len(extraCounts) > 1 {
+		unchanged = extraCounts[1]
+	}
 	finished := ""
 	if status != "running" {
 		finished = now()
 	}
 	_, err := s.db.Exec(`
 		UPDATE scan_jobs
-		SET status = ?, total = ?, processed = ?, added = ?, updated = ?, failed = ?, message = ?, finished_at = ?
+		SET status = ?, total = ?, processed = ?, added = ?, updated = ?, failed = ?, missing = ?, unchanged = ?, message = ?, finished_at = ?
 		WHERE id = ?
-	`, status, total, processed, added, updated, failed, message, finished, jobID)
+	`, status, total, processed, added, updated, failed, missing, unchanged, message, finished, jobID)
 	return err
 }
 
 func (s *Store) LatestScanStatus(rootID int64) (models.ScanStatus, error) {
 	var st models.ScanStatus
 	err := s.db.QueryRow(`
-		SELECT root_id, status, total, processed, added, updated, failed, message, started_at, finished_at
+		SELECT root_id, status, total, processed, added, updated, failed, missing, unchanged, scope, scope_path, message, started_at, finished_at
 		FROM scan_jobs
 		WHERE root_id = ?
 		ORDER BY id DESC LIMIT 1
-	`, rootID).Scan(&st.RootID, &st.Status, &st.Total, &st.Processed, &st.Added, &st.Updated, &st.Failed, &st.Message, &st.StartedAt, &st.FinishedAt)
+	`, rootID).Scan(&st.RootID, &st.Status, &st.Total, &st.Processed, &st.Added, &st.Updated, &st.Failed, &st.Missing, &st.Unchanged, &st.Scope, &st.ScopePath, &st.Message, &st.StartedAt, &st.FinishedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return models.ScanStatus{RootID: rootID, Status: "idle"}, nil
+		return models.ScanStatus{RootID: rootID, Status: "idle", Scope: "root"}, nil
 	}
 	return st, err
 }
@@ -503,8 +547,7 @@ func (s *Store) LatestScanStatus(rootID int64) (models.ScanStatus, error) {
 func (s *Store) UpsertFontFile(file FileUpsert, faces []models.FontFace) (int64, bool, error) {
 	t := now()
 	var existingID int64
-	var existingHash string
-	err := s.db.QueryRow(`SELECT id, hash FROM font_files WHERE path = ?`, file.Path).Scan(&existingID, &existingHash)
+	err := s.db.QueryRow(`SELECT id FROM font_files WHERE path = ?`, file.Path).Scan(&existingID)
 	added := false
 	if errors.Is(err, sql.ErrNoRows) {
 		res, err := s.db.Exec(`
@@ -530,7 +573,6 @@ func (s *Store) UpsertFontFile(file FileUpsert, faces []models.FontFace) (int64,
 		if err != nil {
 			return 0, false, err
 		}
-		added = existingHash == ""
 	}
 
 	if err := s.ReplaceFaces(existingID, faces); err != nil {
@@ -606,33 +648,47 @@ func (s *Store) ReplaceFaces(fileID int64, faces []models.FontFace) error {
 	return tx.Commit()
 }
 
-func (s *Store) MarkMissingFiles(rootID int64, seen map[string]struct{}) error {
+func (s *Store) MarkMissingFiles(rootID int64, seen map[string]struct{}) (int, error) {
+	return s.MarkMissingFilesInScope(rootID, "", seen)
+}
+
+func (s *Store) MarkMissingFilesInScope(rootID int64, scopeAbsPath string, seen map[string]struct{}) (int, error) {
 	rows, err := s.db.Query(`SELECT id, path FROM font_files WHERE root_id = ? AND status != 'missing'`, rootID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer rows.Close()
+
+	scopeAbsPath = filepath.Clean(strings.TrimSpace(scopeAbsPath))
+	hasScope := scopeAbsPath != "" && scopeAbsPath != "."
+	seenKeys := make(map[string]struct{}, len(seen))
+	for path := range seen {
+		seenKeys[pathKey(path)] = struct{}{}
+	}
 
 	var missing []int64
 	for rows.Next() {
 		var id int64
 		var path string
 		if err := rows.Scan(&id, &path); err != nil {
-			return err
+			return 0, err
 		}
-		if _, ok := seen[path]; !ok {
+		if hasScope && !samePath(scopeAbsPath, path) && !pathContains(scopeAbsPath, path) {
+			continue
+		}
+		if _, ok := seenKeys[pathKey(path)]; !ok {
 			missing = append(missing, id)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return err
+		return 0, err
 	}
 	for _, id := range missing {
 		if _, err := s.db.Exec(`UPDATE font_files SET status = 'missing', updated_at = ? WHERE id = ?`, now(), id); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return len(missing), nil
 }
 
 func (s *Store) FinishRootScan(rootID int64) error {

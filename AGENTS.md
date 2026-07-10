@@ -7,7 +7,7 @@
 - 项目类型：Windows 11 桌面字体管理工具。
 - 品牌名：Ziio。
 - 完整应用名：Ziio Font Manager。
-- 技术栈：Wails v2.12 + Go 1.25 + React 18 + TypeScript 4.6 + Vite 3。
+- 技术栈：Wails v2.12 + Go 1.25 + React 18 + TypeScript 5.9 + Vite 3。
 - 数据库：SQLite，使用 `modernc.org/sqlite` 纯 Go 驱动。
 - 字体解析：`github.com/tdewolff/font`。
 - Windows 集成：Registry、GDI `AddFontResourceEx` / `RemoveFontResourceEx`、`WM_FONTCHANGE`。
@@ -21,6 +21,8 @@
 - 修改时优先贴合现有结构：Go 后端在 `internal/*`，React 前端在 `frontend/src/*`，Wails 绑定由 `frontend/wailsjs/*` 承接。
 - 对 Windows 字体安装、卸载、注册表和管理员权限相关代码保持谨慎；不得绕过系统字体保护逻辑。
 - 只做用户要求范围内的修改，不顺手重构无关模块。
+- 当前前端已接入 `i18next` / `react-i18next`；新增或修改用户可见 UI 文案时，应同步维护 `frontend/src/i18n.ts` 的中文和英文资源，避免在组件中继续硬编码中文或英文。
+- 调整应用版本时，应同步检查 `App.GetAppInfo()`、前端设置弹窗 fallback、`frontend/package.json`、README、PROJECT_PLAN 和发布构建说明，保持版本号一致。
 
 ## 开发日志要求
 
@@ -80,6 +82,7 @@ wails build -webview2 embed
 - 字体列表默认分页大小是 20；触底加载逻辑不要误显示数据库总数。
 - 预览加载应继续保持懒加载和低并发，避免大字体库一次性生成大量预览。
 - UI 文案应尽量说明操作结果和失败原因，尤其是权限不足、旧格式受限、坏字体、缺失文件。
+- UI 文案必须走 i18n 资源；后端原始错误可按原文展示，但前端包裹文案、按钮、菜单、标题、placeholder、aria-label 和 tooltip 都应翻译。
 - 长路径、长字体名、超长样本文字要避免撑坏布局。
 
 ## 可直接使用的任务提示模板

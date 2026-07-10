@@ -173,6 +173,148 @@ func TestScanRootContinuesAfterParserError(t *testing.T) {
 	}
 }
 
+func TestScanRootCountsUnchangedFiles(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	rootDir := t.TempDir()
+	root, err := db.AddRoot(rootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filePath := filepath.Join(root.Path, "current.ttf")
+	if err := os.WriteFile(filePath, []byte("same"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	indexCurrentTestFont(t, db, root.ID, filePath, "Current")
+
+	parserCalled := false
+	restore := replaceParser(func(path string) (fontmeta.ParsedFile, error) {
+		parserCalled = true
+		return fontmeta.ParsedFile{}, errors.New("parser should not be called for unchanged files")
+	})
+	defer restore()
+
+	result, err := New(db, t.TempDir()).ScanRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 1 || result.Processed != 1 || result.Unchanged != 1 || result.Failed != 0 {
+		t.Fatalf("result = %#v, want total=1 processed=1 unchanged=1 failed=0", result)
+	}
+	if parserCalled {
+		t.Fatal("parser was called for an unchanged file")
+	}
+	status, err := db.LatestScanStatus(root.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Unchanged != 1 || status.Scope != "root" {
+		t.Fatalf("status = %#v, want unchanged=1 scope=root", status)
+	}
+}
+
+func TestScanFolderMarksMissingOnlyWithinFolder(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	rootDir := t.TempDir()
+	root, err := db.AddRoot(rootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serifDir := filepath.Join(root.Path, "Serif")
+	sansDir := filepath.Join(root.Path, "Sans")
+	if err := os.MkdirAll(serifDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(sansDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	keepPath := filepath.Join(serifDir, "keep.ttf")
+	gonePath := filepath.Join(serifDir, "gone.ttf")
+	outsidePath := filepath.Join(sansDir, "outside.ttf")
+	for _, path := range []string{keepPath, outsidePath} {
+		if err := os.WriteFile(path, []byte("same"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	indexCurrentTestFont(t, db, root.ID, keepPath, "Keep")
+	indexMissingTestFont(t, db, root.ID, gonePath, "Gone")
+	indexCurrentTestFont(t, db, root.ID, outsidePath, "Outside")
+
+	parserCalled := false
+	restore := replaceParser(func(path string) (fontmeta.ParsedFile, error) {
+		parserCalled = true
+		return fontmeta.ParsedFile{}, errors.New("parser should not be called for unchanged files")
+	})
+	defer restore()
+
+	result, err := New(db, t.TempDir()).ScanFolder(root, "Serif")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 1 || result.Processed != 1 || result.Unchanged != 1 || result.Missing != 1 {
+		t.Fatalf("result = %#v, want total=1 processed=1 unchanged=1 missing=1", result)
+	}
+	if parserCalled {
+		t.Fatal("parser was called for an unchanged file")
+	}
+	items, err := db.QueryFonts(models.FontQuery{RootID: root.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	families := map[string]bool{}
+	for _, item := range items {
+		families[item.Family] = true
+	}
+	if !families["Keep"] || !families["Outside"] || families["Gone"] {
+		t.Fatalf("visible families after folder scan = %#v", families)
+	}
+}
+
+func TestScanFolderMissingDirectoryMarksSubtreeMissing(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	rootDir := t.TempDir()
+	root, err := db.AddRoot(rootDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexMissingTestFont(t, db, root.ID, filepath.Join(root.Path, "Deleted", "one.ttf"), "One")
+	indexMissingTestFont(t, db, root.ID, filepath.Join(root.Path, "Deleted", "two.ttf"), "Two")
+	outsidePath := filepath.Join(root.Path, "Outside.ttf")
+	if err := os.WriteFile(outsidePath, []byte("same"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	indexCurrentTestFont(t, db, root.ID, outsidePath, "Outside")
+
+	result, err := New(db, t.TempDir()).ScanFolder(root, "Deleted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 0 || result.Missing != 2 || result.Failed != 0 {
+		t.Fatalf("result = %#v, want total=0 missing=2 failed=0", result)
+	}
+	items, err := db.QueryFonts(models.FontQuery{RootID: root.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Family != "Outside" {
+		t.Fatalf("visible items after missing folder scan = %#v", items)
+	}
+}
+
 func replaceParser(parser func(string) (fontmeta.ParsedFile, error)) func() {
 	old := parseFontFile
 	parseFontFile = parser
@@ -204,6 +346,52 @@ func parsedOK(path string) fontmeta.ParsedFile {
 			PreviewSupported: true,
 			Status:           "ok",
 		}},
+	}
+}
+
+func indexCurrentTestFont(t *testing.T, db *store.Store, rootID int64, path, family string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexTestFont(t, db, rootID, path, family, info.Size(), info.ModTime().Format("2006-01-02T15:04:05-07:00"))
+}
+
+func indexMissingTestFont(t *testing.T, db *store.Store, rootID int64, path, family string) {
+	t.Helper()
+	indexTestFont(t, db, rootID, path, family, 123, "2026-06-24T00:00:00+08:00")
+}
+
+func indexTestFont(t *testing.T, db *store.Store, rootID int64, path, family string, size int64, modifiedAt string) {
+	t.Helper()
+	cleanPath, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanPath = filepath.Clean(cleanPath)
+	_, _, err = db.UpsertFontFile(store.FileUpsert{
+		RootID:           rootID,
+		Path:             cleanPath,
+		FileName:         filepath.Base(cleanPath),
+		Format:           "TTF",
+		Size:             size,
+		ModifiedAt:       modifiedAt,
+		Hash:             "hash-" + family,
+		Status:           "ok",
+		PreviewSupported: true,
+	}, []models.FontFace{{
+		FaceIndex:        0,
+		Family:           family,
+		Style:            "Regular",
+		FullName:         family + " Regular",
+		PostScriptName:   family + "-Regular",
+		Weight:           400,
+		PreviewSupported: true,
+		Status:           "ok",
+	}})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

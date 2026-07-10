@@ -33,6 +33,11 @@ type LibraryService struct {
 	running map[int64]bool
 }
 
+type scanRequest struct {
+	scope      string
+	folderPath string
+}
+
 func NewLibraryService(s *store.Store, logDir ...string) *LibraryService {
 	dir := ""
 	if len(logDir) > 0 {
@@ -71,7 +76,7 @@ func (s *LibraryService) AddRoot(path string) (models.LibraryRoot, error) {
 		return root, err
 	}
 	diagnostics.Appendf(s.logDir, "app.log", "add-root id=%d path=%q", root.ID, root.Path)
-	s.startScan(root)
+	s.startScan(root, scanRequest{scope: "root"})
 	return s.store.RootByID(root.ID)
 }
 
@@ -87,7 +92,7 @@ func (s *LibraryService) ScanSystemFonts() ([]models.LibraryRoot, error) {
 			return roots, err
 		}
 		diagnostics.Appendf(s.logDir, "app.log", "scan-system-root id=%d path=%q", root.ID, root.Path)
-		s.startScan(root)
+		s.startScan(root, scanRequest{scope: "root"})
 		roots = append(roots, root)
 	}
 	if len(roots) == 0 {
@@ -131,8 +136,41 @@ func (s *LibraryService) RescanRoot(id int64) (models.ScanResult, error) {
 		return models.ScanResult{}, err
 	}
 	diagnostics.Appendf(s.logDir, "app.log", "rescan-root id=%d path=%q", root.ID, root.Path)
-	s.startScan(root)
-	return models.ScanResult{RootID: id}, nil
+	if !s.startScan(root, scanRequest{scope: "root"}) {
+		return models.ScanResult{}, fmt.Errorf("字体库正在扫描，请等待扫描完成后再同步")
+	}
+	return models.ScanResult{RootID: id, Scope: "root"}, nil
+}
+
+func (s *LibraryService) RescanAllRoots() (int, error) {
+	roots, err := s.store.ListRoots()
+	if err != nil {
+		return 0, err
+	}
+	queued := 0
+	for _, root := range roots {
+		if s.startScan(root, scanRequest{scope: "root"}) {
+			queued++
+		}
+	}
+	diagnostics.Appendf(s.logDir, "app.log", "rescan-all-roots queued=%d total=%d", queued, len(roots))
+	return queued, nil
+}
+
+func (s *LibraryService) RescanFolder(rootID int64, folderPath string) (models.ScanResult, error) {
+	root, err := s.store.RootByID(rootID)
+	if err != nil {
+		return models.ScanResult{}, err
+	}
+	cleanPath, err := cleanFolderPath(folderPath)
+	if err != nil {
+		return models.ScanResult{}, err
+	}
+	diagnostics.Appendf(s.logDir, "app.log", "rescan-folder id=%d path=%q folder=%q", root.ID, root.Path, cleanPath)
+	if !s.startScan(root, scanRequest{scope: "folder", folderPath: cleanPath}) {
+		return models.ScanResult{}, fmt.Errorf("字体库正在扫描，请等待扫描完成后再同步文件夹")
+	}
+	return models.ScanResult{RootID: rootID, Scope: "folder", ScopePath: cleanPath}, nil
 }
 
 func (s *LibraryService) GetScanStatus(rootID int64) (models.ScanStatus, error) {
@@ -143,11 +181,26 @@ func (s *LibraryService) ListFolders(rootID int64) ([]models.FontFolder, error) 
 	return s.store.ListFolders(rootID)
 }
 
-func (s *LibraryService) startScan(root models.LibraryRoot) {
+func cleanFolderPath(folderPath string) (string, error) {
+	trimmed := strings.TrimSpace(folderPath)
+	if trimmed == "" {
+		return "", fmt.Errorf("请选择要同步的文件夹")
+	}
+	clean := filepath.Clean(filepath.FromSlash(trimmed))
+	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("文件夹路径不在字体库内")
+	}
+	return filepath.ToSlash(clean), nil
+}
+
+func (s *LibraryService) startScan(root models.LibraryRoot, request scanRequest) bool {
+	if strings.TrimSpace(request.scope) == "" {
+		request.scope = "root"
+	}
 	s.mu.Lock()
 	if s.running[root.ID] {
 		s.mu.Unlock()
-		return
+		return false
 	}
 	s.running[root.ID] = true
 	s.mu.Unlock()
@@ -164,10 +217,20 @@ func (s *LibraryService) startScan(root models.LibraryRoot) {
 			delete(s.running, root.ID)
 			s.mu.Unlock()
 		}()
-		diagnostics.Appendf(s.logDir, "app.log", "scan-start root=%d path=%q", root.ID, root.Path)
-		_, _ = s.scanner.ScanRoot(root)
-		diagnostics.Appendf(s.logDir, "app.log", "scan-stop root=%d path=%q", root.ID, root.Path)
+		diagnostics.Appendf(s.logDir, "app.log", "scan-start root=%d scope=%s folder=%q path=%q", root.ID, request.scope, request.folderPath, root.Path)
+		var err error
+		if request.scope == "folder" {
+			_, err = s.scanner.ScanFolder(root, request.folderPath)
+		} else {
+			_, err = s.scanner.ScanRoot(root)
+		}
+		if err != nil {
+			diagnostics.Appendf(s.logDir, "app.log", "scan-stop root=%d scope=%s folder=%q path=%q error=%q", root.ID, request.scope, request.folderPath, root.Path, err.Error())
+			return
+		}
+		diagnostics.Appendf(s.logDir, "app.log", "scan-stop root=%d scope=%s folder=%q path=%q", root.ID, request.scope, request.folderPath, root.Path)
 	}()
+	return true
 }
 
 type systemFontRoot struct {

@@ -30,6 +30,19 @@ export type FontFolder = {
   fontCount: number;
 };
 
+export type ScanResult = {
+  rootId: number;
+  total: number;
+  processed: number;
+  added: number;
+  updated: number;
+  failed: number;
+  missing: number;
+  unchanged: number;
+  scope: string;
+  scopePath: string;
+};
+
 export type FontItem = {
   faceId: number;
   fileId: number;
@@ -166,7 +179,9 @@ export const api = {
   scanSystemFonts: () => service("LibraryService").ScanSystemFonts() as Promise<LibraryRoot[]>,
   listRoots: () => service("LibraryService").ListRoots() as Promise<LibraryRoot[]>,
   listFolders: (rootId: number) => service("LibraryService").ListFolders(rootId) as Promise<FontFolder[]>,
-  rescanRoot: (id: number) => service("LibraryService").RescanRoot(id),
+  rescanRoot: (id: number) => service("LibraryService").RescanRoot(id) as Promise<ScanResult>,
+  rescanAllRoots: () => service("LibraryService").RescanAllRoots() as Promise<number>,
+  rescanFolder: (rootId: number, folderPath: string) => service("LibraryService").RescanFolder(rootId, folderPath) as Promise<ScanResult>,
   removeRoot: (id: number) => service("LibraryService").RemoveRoot(id),
   searchFonts: (query: FontQuery) => service("FontService").SearchFonts(query) as Promise<FontItem[]>,
   getFontDetail: (faceId: number) => service("FontService").GetFontDetail(faceId) as Promise<FontDetail>,

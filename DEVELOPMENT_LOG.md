@@ -2,6 +2,100 @@
 
 本日志记录项目进入 Beta 后的重要功能、较大改进、架构调整和流程变更。小修、小优化、文案微调和对刚完成工作的补丁可以不记录。
 
+## 2026-07-10
+
+### 0.2.0 版本整理
+
+- 应用版本同步到 `0.2.0`，覆盖 `App.GetAppInfo()`、前端设置弹窗 fallback、前端 package 元数据和项目文档。
+- `README.md`、`PROJECT_PLAN.md`、`AGENTS.md` 补充当前 0.2.0 能力总结，重点记录 TypeScript 5.9 升级和 `i18next` / `react-i18next` 中英文 i18n。
+- 明确后续新增前端可见文案应进入 `frontend/src/i18n.ts`，版本更新需要同步代码、文档和构建说明。
+
+验证：
+
+- 本次整理完成后重新运行 `npm run build`、`go test ./...` 和 `wails build -webview2 embed`。
+
+### SVG 品牌资源与 Windows 图标
+
+- 使用优化后的 `design/SVG/logo.svg` 替换界面左上角原有文字标记，前端通过 `frontend/src/assets/images/logo.svg` 引用品牌 logo。
+- 使用同一个透明底 `design/SVG/logo.svg` 重新生成 `build/appicon.png` 与 `build/windows/icon.ico`，ICO 包含 `16, 24, 32, 48, 64, 128, 256` 多尺寸资源。
+- 重新执行 Wails 生产构建，生成界面 logo 与 Windows 应用图标统一后的 `build/bin/ZiioFontManager.exe`。
+
+影响范围：
+
+- 前端品牌区视觉资源、Wails Windows 编译图标资源。
+- 不新增 Wails API，不改变后端模型、数据库、扫描或安装逻辑。
+
+验证：
+
+- `npm run build` 通过；Vite 仍提示第三方模块级 `"use client"` 指令被忽略，为构建警告。
+- `wails build -webview2 embed` 通过，生成 `build/bin/ZiioFontManager.exe`。
+
+### 设置弹窗与中英文 i18n
+
+- 前端 TypeScript 升级到 `^5.9.3`，新增 `i18next` 和 `react-i18next`，保持 React 18 与 Vite 3 不变。
+- 左上角品牌区移除界面 logo 和 `Ziio Font Manager` 标题，仅保留“本地字体库管理”，右侧新增齿轮设置入口。
+- 新增设置弹窗，显示 logo、软件名称、版本号和语言选择；语言偏好通过 `localStorage` 保存。
+- 当前主要可见 UI 文案、按钮、菜单、提示、空状态、详情栏、确认框、title / aria / placeholder 已迁入中英文资源。
+
+影响范围：
+
+- 前端依赖、入口初始化、工作台文案、设置弹窗和本地语言偏好。
+- 不新增 Wails API，不改变 Go 后端模型、数据库、扫描或安装逻辑；后端原始错误信息仍按原文展示。
+
+验证：
+
+- `npm run build` 通过；Vite 仍提示第三方模块级 `"use client"` 指令被忽略，为构建警告。
+- `wails build -webview2 embed` 通过，生成 `build/bin/ZiioFontManager.exe`。
+
+### 左侧折叠与网格列数菜单修复
+
+- 修复用户字体库根行点击后无法再次收起的问题，已选中 root 可在展开 / 收起之间切换。
+- 保持所有层级文件夹点击名称或展开符均可展开 / 收起，并收紧文件夹行右侧 `...` 菜单按钮对齐。
+- 网格列数菜单改为状态控制，hover 网格图标时稳定显示，点击网格图标只切换布局并关闭菜单。
+
+验证：
+
+- `npm run build` 通过；Vite 仍提示第三方模块级 `"use client"` 指令被忽略，为构建警告。
+- `wails build -webview2 embed` 通过，生成 `build/bin/ZiioFontManager.exe`。
+
+## 2026-07-04
+
+### 左侧导航与可调布局体验
+
+- 左侧字体库 / 文件夹导航改为更紧凑的行高、间距和缩进，优先展示文件夹名称与数量。
+- 字体库和文件夹行内操作收纳到 hover/focus 时出现的 `...` 菜单，菜单内提供同步、移除等上下文操作。
+- 三栏工作区改为可拖拽调整左侧导航栏和右侧属性栏宽度，并通过 `localStorage` 持久化用户偏好。
+
+影响范围：
+
+- 前端工作台布局、左侧字体库 / 文件夹导航交互和本地 UI 偏好持久化。
+- 不新增 Wails API，不改变字体库索引、扫描或安装后端语义。
+
+验证：
+
+- `npm run build` 通过；Vite 仍提示第三方模块级 `"use client"` 指令被忽略，为构建警告。
+- `go test ./...` 通过，确认未影响后端回归。
+
+### 字体库同步与文件夹级重扫
+
+- 左侧侧栏新增“全量重新扫描”按钮，可一次性对所有已添加字体库排队同步。
+- 用户字体库行新增同步图标按钮，可直接同步单个字体库；文件夹行新增同步图标按钮，可递归同步该文件夹及子文件夹。
+- 后端新增 `RescanAllRoots` 和 `RescanFolder`，文件夹级扫描只标记该子树内缺失的字体文件，不影响同一字体库的其他文件夹。
+- 扫描结果补充 `missing`、`unchanged`、`scope`、`scopePath`，扫描日志会记录 root / folder 范围和增量统计。
+- 修正 `UpsertFontFile` 的新增/更新统计判断，避免曾经解析失败且 hash 为空的文件被误算为新增。
+
+影响范围：
+
+- 前端左侧字体库 / 文件夹导航区、Wails 前端绑定、扫描状态模型、扫描任务表兼容迁移。
+- 同步操作仍只维护 Ziio 索引，不删除磁盘源文件；删除或移出范围的字体会标记为 `missing` 并从常规列表隐藏。
+- 文件夹同步默认递归处理；扫描中的字体库会禁用同步和删除入口。
+
+验证：
+
+- `go test ./...` 通过。
+- `npm run build` 通过；Vite 仍提示第三方模块级 `"use client"` 指令被忽略，为构建警告。
+- `wails build -webview2 embed` 通过，生成 `build/bin/ZiioFontManager.exe`。
+
 ## 2026-07-03
 
 ### 文档与协作流程
