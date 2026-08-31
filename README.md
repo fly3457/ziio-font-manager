@@ -1,10 +1,14 @@
 # Ziio Font Manager
 
+[English](#english) | [中文](#中文) · [Releases](https://github.com/fly3457/ziio-font-manager/releases) · [MIT License](LICENSE)
+
 ## English
 
 **Ziio Font Manager 0.2.0** is a local-first desktop font manager for Windows 11. It is built with Wails, Go, React, and TypeScript, and is currently in **Beta / v0.3 planning**.
 
 Ziio focuses on practical local font-library workflows: indexing font folders, scanning installed system fonts, previewing typefaces, searching metadata, collecting favorites, and managing Windows font installation records.
+
+The project is open source under the [MIT License](LICENSE). Download the Windows executable from [GitHub Releases](https://github.com/fly3457/ziio-font-manager/releases); the current `v0.2.0` release is a Beta prerelease.
 
 ### Features
 
@@ -59,6 +63,22 @@ Ziio focuses on practical local font-library workflows: indexing font folders, s
 
 ### Development
 
+Prepare Windows 11, Git, Go 1.25 or newer, Node.js LTS with npm, and the Microsoft Edge WebView2 Runtime. See the [Wails installation guide](https://wails.io/docs/gettingstarted/installation/) for platform prerequisites.
+
+Clone the repository and prepare the dependencies:
+
+```powershell
+git clone https://github.com/fly3457/ziio-font-manager.git
+Set-Location ziio-font-manager
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+wails doctor
+go mod download
+npm --prefix frontend ci
+npm --prefix frontend run build
+```
+
+Ensure your Go `bin` directory is on `PATH` so the `wails` command is available. The initial frontend build creates `frontend/dist`, which the Go entry point embeds and therefore needs for `go test ./...` on a fresh clone.
+
 Run the app in live development mode:
 
 ```powershell
@@ -108,11 +128,19 @@ Ziio 0.2.0 has the main local-font workflow in place and is moving from MVP comp
 - First-time indexing of very large font libraries can still take time, although it no longer blocks the add-library action.
 - A single font metadata parse is capped at 12 seconds; timed-out fonts are marked as errors and skipped so the scan can continue.
 
+### Contributing and License
+
+Bug reports and suggestions are welcome in [Issues](https://github.com/fly3457/ziio-font-manager/issues). Read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request.
+
+Original project code is licensed under the [MIT License](LICENSE). Dependencies and bundled third-party assets retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Fonts that you scan, preview, or install retain their original licenses; using Ziio does not grant additional rights to those fonts.
+
 ## 中文
 
 **Ziio Font Manager 0.2.0** 是一个面向 Windows 11 的本地优先字体管理桌面应用。项目使用 Wails、Go、React 和 TypeScript 构建，当前处于 **Beta / v0.3 planning** 阶段。
 
 Ziio 面向真实的本地字体库管理流程：索引字体文件夹、扫描系统已安装字体、预览字体、检索字体元数据、收藏常用字体，并管理 Windows 字体安装记录。
+
+项目使用 [MIT 许可证](LICENSE) 开源。Windows 可执行文件可从 [GitHub Releases](https://github.com/fly3457/ziio-font-manager/releases) 下载；当前 `v0.2.0` 为 Beta 预发布版本。
 
 ### 功能
 
@@ -167,6 +195,22 @@ Ziio 面向真实的本地字体库管理流程：索引字体文件夹、扫描
 
 ### 开发
 
+准备 Windows 11、Git、Go 1.25 或更新版本、包含 npm 的 Node.js LTS，以及 Microsoft Edge WebView2 Runtime。平台依赖详见 [Wails 安装说明](https://wails.io/docs/gettingstarted/installation/)。
+
+克隆仓库并准备依赖：
+
+```powershell
+git clone https://github.com/fly3457/ziio-font-manager.git
+Set-Location ziio-font-manager
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+wails doctor
+go mod download
+npm --prefix frontend ci
+npm --prefix frontend run build
+```
+
+请将 Go 的 `bin` 目录加入 `PATH`，确保可以执行 `wails`。首次前端构建会生成 Go 入口所嵌入的 `frontend/dist`，因此全新克隆后，应先构建前端再运行 `go test ./...`。
+
 以实时开发模式运行应用：
 
 ```powershell
@@ -215,3 +259,9 @@ Ziio 当前正在从 MVP 完整性转向 Beta 可靠性。当前优先事项包�
 - Type1、FON、FNT、FOT 等旧格式按尽力管理处理，元数据和预览支持可能受限。
 - 首次索引超大字体库仍可能耗时较长，但不会再阻塞添加字体库操作。
 - 单个字体元数据解析限制为 12 秒；超时字体会被标记为错误并跳过，避免阻塞整个扫描任务。
+
+### 参与贡献与许可证
+
+欢迎通过 [Issues](https://github.com/fly3457/ziio-font-manager/issues) 反馈问题或提出建议；提交 Pull Request 前请阅读 [贡献指南](CONTRIBUTING.md)。
+
+项目原创代码使用 [MIT 许可证](LICENSE)。依赖和随附第三方资源保留各自的许可证，详见 [第三方许可说明](THIRD_PARTY_NOTICES.md)。通过 Ziio 扫描、预览或安装的字体仍受其原有许可约束，使用本工具不会授予额外字体使用或分发权利。
